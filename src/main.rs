@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::Display,
+    fmt,
     io::{self, Write},
     process,
 };
@@ -8,11 +8,30 @@ use std::{
 type InputBuffer = String;
 
 #[derive(Debug)]
-pub enum SqliteErr {
+pub struct SqliteErr {
+    _type: SqliteErrType,
+    message: String,
+}
+
+impl SqliteErr {
+    pub fn new(_type: SqliteErrType, message: String) -> Self {
+        Self { _type, message }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SqliteErrType {
     UnrecognizedCommand,
     PrepareSyntaxError,
+    PrepareStringTooLong,
+    PrepareNegativeId,
     ExecuteTableFull,
-    BufferOverflow,
+}
+
+impl fmt::Display for SqliteErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
 }
 
 pub enum Statement {
@@ -30,11 +49,17 @@ impl Statement {
             buffer if buffer.starts_with("insert") => {
                 let args: Vec<_> = buffer[7..].split_ascii_whitespace().collect();
                 if args.len() < 3 {
-                    return Err(SqliteErr::PrepareSyntaxError);
+                    return Err(SqliteErr::new(
+                        SqliteErrType::PrepareSyntaxError,
+                        "Syntax error: Could not parse statement.".to_owned(),
+                    ));
                 }
 
-                let Ok(id) = args[0].parse::<usize>() else {
-                    return Err(SqliteErr::PrepareSyntaxError);
+                let Ok(id) = args[0].parse::<i32>() else {
+                    return Err(SqliteErr::new(
+                        SqliteErrType::PrepareSyntaxError,
+                        "Syntax error: Could not parse statement.".to_owned(),
+                    ));
                 };
 
                 let username = args[1].to_owned();
@@ -44,7 +69,10 @@ impl Statement {
                 let statement = Statement::Insert(row);
                 Ok(statement)
             }
-            _ => Err(SqliteErr::UnrecognizedCommand),
+            _ => Err(SqliteErr::new(
+                SqliteErrType::UnrecognizedCommand,
+                format!("Unrecognized keyword at start of '{}'.", input_buffer),
+            )),
         }
     }
 
@@ -60,25 +88,38 @@ const COLUMN_USERNAME_SIZE: usize = 32;
 const COLUMN_EMAIL_SIZE: usize = 255;
 
 pub struct Row {
-    id: usize,
+    id: i32,
     username: String,
     email: String,
 }
 
-impl Display for Row {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Row {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}, {}, {})", self.id, self.username, self.email)
     }
 }
 
 impl Row {
-    pub fn new(id: usize, mut username: String, mut email: String) -> Result<Self, SqliteErr> {
+    pub fn new(id: i32, mut username: String, mut email: String) -> Result<Self, SqliteErr> {
+        if id < 0 {
+            return Err(SqliteErr::new(
+                    SqliteErrType::PrepareNegativeId,
+                    "ID must be positive.".to_owned()
+            ))
+        }
+
         if username.len() > COLUMN_USERNAME_SIZE {
-            return Err(SqliteErr::BufferOverflow);
+            return Err(SqliteErr::new(
+                SqliteErrType::PrepareStringTooLong,
+                "String is too long.".to_owned(),
+            ));
         }
 
         if email.len() > COLUMN_EMAIL_SIZE {
-            return Err(SqliteErr::BufferOverflow);
+            return Err(SqliteErr::new(
+                SqliteErrType::PrepareStringTooLong,
+                "String is too long.".to_owned(),
+            ));
         }
 
         username.shrink_to(COLUMN_USERNAME_SIZE);
@@ -92,7 +133,7 @@ impl Row {
     }
 }
 
-const ID_SIZE: usize = size_of::<usize>();
+const ID_SIZE: usize = size_of::<i32>();
 const USERNAME_SIZE: usize = size_of::<String>() + COLUMN_USERNAME_SIZE * size_of::<char>();
 const EMAIL_SIZE: usize = size_of::<String>() + COLUMN_EMAIL_SIZE * size_of::<char>();
 const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
@@ -102,18 +143,24 @@ const TABLE_MAX_PAGES: usize = 100;
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
-pub struct Table(HashMap<usize, Vec<Row>>);
+pub struct Table {
+    num_rows: usize,
+    pages: HashMap<usize, Vec<Row>>,
+}
 
 impl Table {
     pub fn new() -> Self {
-        Self(HashMap::with_capacity(TABLE_MAX_PAGES))
+        Self {
+            num_rows: 0,
+            pages: HashMap::with_capacity(TABLE_MAX_PAGES),
+        }
     }
 
     pub fn row_slot(&mut self, row_num: usize) -> Option<&Row> {
         let page_num = row_num / ROWS_PER_PAGE;
 
         let page = self
-            .0
+            .pages
             .entry(page_num)
             .or_insert(Vec::with_capacity(ROWS_PER_PAGE));
 
@@ -123,7 +170,7 @@ impl Table {
     }
 
     pub fn execute_select(&self) -> Result<(), SqliteErr> {
-        for (_, page) in &self.0 {
+        for (_, page) in &self.pages {
             for row in page {
                 println!("{row}");
             }
@@ -132,17 +179,24 @@ impl Table {
     }
 
     pub fn execute_insert(&mut self, row: Row) -> Result<(), SqliteErr> {
-        if self.0.len() >= TABLE_MAX_ROWS {
-            return Err(SqliteErr::ExecuteTableFull);
+        if self.num_rows >= TABLE_MAX_ROWS {
+            return Err(SqliteErr::new(
+                SqliteErrType::ExecuteTableFull,
+                "Error: Table full.".to_owned(),
+            ));
         }
 
-        let page_num = self.0.len() / ROWS_PER_PAGE;
+        let page_num = self.num_rows / ROWS_PER_PAGE;
 
         let page = self
-            .0
+            .pages
             .entry(page_num)
             .or_insert(Vec::with_capacity(ROWS_PER_PAGE));
+
         page.push(row);
+
+        self.num_rows += 1;
+
         Ok(())
     }
 }
@@ -161,8 +215,12 @@ fn main() {
         if buffer[0] == '.' {
             match do_meta_command(&input_buffer) {
                 Ok(_) => continue,
-                Err(_) => {
+                Err(SqliteErr { _type, .. }) if _type == SqliteErrType::PrepareSyntaxError => {
                     println!("Unrecognized command '{}'.", input_buffer);
+                    continue;
+                }
+                Err(err) => {
+                    println!("{}", err);
                     continue;
                 }
             }
@@ -170,24 +228,15 @@ fn main() {
 
         let statement = match Statement::prepare_statement(&input_buffer) {
             Ok(statement) => statement,
-            Err(SqliteErr::PrepareSyntaxError) => {
-                println!("Syntax error: Could not parse statement.");
-                continue;
-            }
-            Err(SqliteErr::UnrecognizedCommand) => {
-                println!("Unrecognized keyword at start of '{}'.", input_buffer);
-                continue;
-            }
             Err(err) => {
-                println!("Unexpected error: {:?}", err);
+                println!("{}", err);
                 continue;
             }
         };
 
         match statement.execute_statement(&mut table) {
             Ok(()) => println!("Executed."),
-            Err(SqliteErr::ExecuteTableFull) => println!("Error: Table full"),
-            Err(err) => println!("Unexpected error: {:?}", err),
+            Err(err) => println!("{}", err),
         }
     }
 }
@@ -211,6 +260,9 @@ fn do_meta_command(input_buffer: &InputBuffer) -> Result<(), SqliteErr> {
     if input_buffer == ".exit" {
         process::exit(0);
     } else {
-        Err(SqliteErr::UnrecognizedCommand)
+        Err(SqliteErr::new(
+            SqliteErrType::UnrecognizedCommand,
+            format!("Unrecognized keyword at start of '{}'.", input_buffer),
+        ))
     }
 }
