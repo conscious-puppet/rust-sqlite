@@ -103,9 +103,9 @@ impl Row {
     pub fn new(id: i32, mut username: String, mut email: String) -> Result<Self, SqliteErr> {
         if id < 0 {
             return Err(SqliteErr::new(
-                    SqliteErrType::PrepareNegativeId,
-                    "ID must be positive.".to_owned()
-            ))
+                SqliteErrType::PrepareNegativeId,
+                "ID must be positive.".to_owned(),
+            ));
         }
 
         if username.len() > COLUMN_USERNAME_SIZE {

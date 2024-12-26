@@ -40,8 +40,8 @@ fn print_error_when_row_is_full() {
 
 #[test]
 fn allow_inserting_string_at_maximum_length() {
-    let username = ['a';32].iter().cloned().collect::<String>();
-    let email = ['a';255].iter().cloned().collect::<String>();
+    let username = ['a'; 32].iter().cloned().collect::<String>();
+    let email = ['a'; 255].iter().cloned().collect::<String>();
     let input = Vec::from([
         format!("insert 1 {username} {email}"),
         "select".to_owned(),
@@ -62,8 +62,8 @@ fn allow_inserting_string_at_maximum_length() {
 
 #[test]
 fn prints_error_message_if_string_are_too_long() {
-    let username = ['a';33].iter().cloned().collect::<String>();
-    let email = ['a';255].iter().cloned().collect::<String>();
+    let username = ['a'; 33].iter().cloned().collect::<String>();
+    let email = ['a'; 255].iter().cloned().collect::<String>();
     let input = Vec::from([
         format!("insert 1 {username} {email}"),
         "select".to_owned(),
@@ -80,8 +80,8 @@ fn prints_error_message_if_string_are_too_long() {
 
     assert_eq!(output, expected_output);
 
-    let username = ['a';32].iter().cloned().collect::<String>();
-    let email = ['a';256].iter().cloned().collect::<String>();
+    let username = ['a'; 32].iter().cloned().collect::<String>();
+    let email = ['a'; 256].iter().cloned().collect::<String>();
     let input = Vec::from([
         format!("insert 1 {username} {email}"),
         "select".to_owned(),
