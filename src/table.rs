@@ -15,7 +15,7 @@ impl fmt::Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for i in 0..self.num_rows {
             let row = Row::deserialize(self.get_row_slot(i));
-            write!(f, "{}", row)?;
+            writeln!(f, "{}", row)?;
         }
         Ok(())
     }

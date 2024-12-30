@@ -76,7 +76,7 @@ impl Statement {
     }
 
     fn execute_select(table: &Table) -> Result<(), ExecuteErr> {
-        println!("{table}");
+        print!("{table}");
         Ok(())
     }
 
