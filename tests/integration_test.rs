@@ -25,7 +25,7 @@ fn insert_and_retrieve_row() {
 
 #[test]
 fn print_error_when_row_is_full() {
-    let mut input: Vec<_> = (0..301)
+    let mut input: Vec<_> = (0..=1400)
         .map(|i| format!("insert {i} user{i} person{i}@example.com"))
         .collect();
     input.push(".exit".to_owned());
@@ -74,7 +74,8 @@ fn prints_error_message_if_string_are_too_long() {
 
     let expected_output = Vec::from([
         "db > String is too long.".to_owned(),
-        "db > Executed.".to_owned(),
+        "db > ".to_owned(),
+        "Executed.".to_owned(),
         "db > ".to_owned(),
     ]);
 
@@ -92,7 +93,8 @@ fn prints_error_message_if_string_are_too_long() {
 
     let expected_output = Vec::from([
         "db > String is too long.".to_owned(),
-        "db > Executed.".to_owned(),
+        "db > ".to_owned(),
+        "Executed.".to_owned(),
         "db > ".to_owned(),
     ]);
 
@@ -110,8 +112,9 @@ fn prints_error_message_if_id_is_negative() {
     let output = spawn_rust_sqlite(input);
 
     let expected_output = Vec::from([
-        "db > ID must be positive.".to_owned(),
-        "db > Executed.".to_owned(),
+        "db > ID is invalid.".to_owned(),
+        "db > ".to_owned(),
+        "Executed.".to_owned(),
         "db > ".to_owned(),
     ]);
 
