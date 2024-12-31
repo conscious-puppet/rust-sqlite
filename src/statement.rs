@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::cursor::Cursor;
 use crate::row::Row;
 use crate::table::{Table, TABLE_MAX_ROWS};
 use crate::InputBuffer;
@@ -75,16 +76,25 @@ impl Statement {
         }
     }
 
-    fn execute_select(table: &Table) -> Result<(), ExecuteErr> {
-        print!("{table}");
+    fn execute_select(table: &mut Table) -> Result<(), ExecuteErr> {
+        let mut cursor = Cursor::table_start(table);
+        while !cursor.end_of_table {
+            let row = cursor.value().map(|cv| Row::deserialize(cv));
+            cursor.advance();
+            if let Some(row) = row {
+                println!("{}", row);
+            }
+        }
         Ok(())
     }
 
     fn execute_insert(row: Row, table: &mut Table) -> Result<(), ExecuteErr> {
-        if table.num_rows() >= TABLE_MAX_ROWS {
+        if table.num_rows >= TABLE_MAX_ROWS {
             return Err(ExecuteErr::ExecuteTableFull);
         }
-        table.put_row(row);
+        let mut cursor = Cursor::table_end(table);
+        cursor.value().map(|cv| row.serialize(cv));
+        cursor.table.num_rows += 1;
         Ok(())
     }
 }

@@ -46,8 +46,7 @@ impl Row {
             .to_string()
     }
 
-    pub fn serialize(&self) -> [u8; ROW_SIZE] {
-        let mut row: [u8; ROW_SIZE] = [0; ROW_SIZE];
+    pub fn serialize(&self, row: &mut [u8]) {
         let id_bytes = self.id.to_le_bytes();
 
         let start = 0;
@@ -61,10 +60,9 @@ impl Row {
         let start = end;
         let end = start + EMAIL_SIZE;
         row[start..end].copy_from_slice(&self.email);
-        row
     }
 
-    pub fn deserialize(row: [u8; ROW_SIZE]) -> Self {
+    pub fn deserialize(row: &[u8]) -> Self {
         let start = 0;
         let end = ID_SIZE;
         let mut id_bytes = [0; ID_SIZE];

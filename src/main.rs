@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use statement::Statement;
 use table::Table;
 
+pub mod cursor;
 pub mod pager;
 pub mod row;
 pub mod statement;
