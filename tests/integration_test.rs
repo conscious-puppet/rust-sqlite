@@ -11,7 +11,8 @@ fn insert_and_retrieve_row() {
         ".exit".to_owned(),
     ];
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
 
     let expected_output = vec![
         "db > Executed.".to_owned(),
@@ -30,7 +31,8 @@ fn print_error_when_row_is_full() {
         .collect();
     input.push(".exit".to_owned());
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
     let output = &output[output.len() - 2];
 
     let expected_output = "db > Error: Table full.";
@@ -48,7 +50,8 @@ fn allow_inserting_string_at_maximum_length() {
         ".exit".to_owned(),
     ];
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
 
     let expected_output = vec![
         "db > Executed.".to_owned(),
@@ -70,7 +73,8 @@ fn prints_error_message_if_string_are_too_long() {
         ".exit".to_owned(),
     ];
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
 
     let expected_output = vec![
         "db > String is too long.".to_owned(),
@@ -88,7 +92,8 @@ fn prints_error_message_if_string_are_too_long() {
         ".exit".to_owned(),
     ];
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
 
     let expected_output = vec![
         "db > String is too long.".to_owned(),
@@ -107,7 +112,8 @@ fn prints_error_message_if_id_is_negative() {
         ".exit".to_owned(),
     ];
 
-    let output = spawn_rust_sqlite(input);
+    let tempfile = TempFile::new();
+    let output = spawn_rust_sqlite(&tempfile, input);
 
     let expected_output = vec![
         "db > ID is invalid.".to_owned(),
@@ -118,8 +124,32 @@ fn prints_error_message_if_id_is_negative() {
     assert_eq!(output, expected_output);
 }
 
-fn spawn_rust_sqlite(input: Vec<String>) -> Vec<String> {
+#[test]
+fn keeps_data_after_closing_connection() {
+    let tempfile = TempFile::new();
+
+    let input = vec![
+        "insert 1 user1 person1@example.com".to_owned(),
+        ".exit".to_owned(),
+    ];
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec!["db > Executed.".to_owned(), "db > ".to_owned()];
+    assert_eq!(output, expected_output);
+
+    let input = vec!["select".to_owned(), ".exit".to_owned()];
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec![
+        "db > (1, user1, person1@example.com)".to_owned(),
+        "Executed.".to_owned(),
+        "db > ".to_owned(),
+    ];
+    assert_eq!(output, expected_output);
+    drop(tempfile);
+}
+
+fn spawn_rust_sqlite(tempfile: &TempFile, input: Vec<String>) -> Vec<String> {
     let mut process = rust_sqlite_exe()
+        .arg(&tempfile.filepath)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -162,6 +192,35 @@ fn rust_sqlite_exe() -> Command {
             path
         })
         .expect("this should only be used where a `current_exe` can be set");
-    let rust_sqlite_exe = target_dir.join(format!("{}{}", "rust-sqlite", env::consts::EXE_SUFFIX));
+    let rust_sqlite_exe = target_dir.join(format!("{}{}", "rust-sqlite", env::consts::EXE_SUFFIX,));
     Command::new(rust_sqlite_exe)
+}
+
+struct TempFile {
+    filepath: String,
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if let Err(_) = std::fs::remove_file(&self.filepath) {
+            println!("Could not delete the tempfile {}", self.filepath);
+        }
+    }
+}
+
+impl TempFile {
+    pub fn new() -> Self {
+        let tempdir = std::env::temp_dir();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .expect("Unable to create a random tempfile name.")
+            .as_nanos();
+        let filename = format!("file_{}.db", now);
+        let filepath = tempdir
+            .join(filename)
+            .to_str()
+            .expect("Unable to create a random tempfile name.")
+            .to_owned();
+        Self { filepath }
+    }
 }

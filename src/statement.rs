@@ -84,8 +84,7 @@ impl Statement {
         if table.num_rows() >= TABLE_MAX_ROWS {
             return Err(ExecuteErr::ExecuteTableFull);
         }
-        let row = row.serialize();
-        table.put_row_slot(row);
+        table.put_row(row);
         Ok(())
     }
 }

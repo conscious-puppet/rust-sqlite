@@ -96,11 +96,11 @@ impl FromStr for Row {
         let columns: Vec<&str> = row.split_whitespace().collect();
         match columns[..] {
             [id, username, email] => {
-                if username.bytes().len() > USERNAME_SIZE {
+                if username.len() > USERNAME_SIZE {
                     return Err(PrepareStatementErr::StringTooLong);
                 }
 
-                if email.bytes().len() > EMAIL_SIZE {
+                if email.len() > EMAIL_SIZE {
                     return Err(PrepareStatementErr::StringTooLong);
                 }
 

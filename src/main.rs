@@ -1,11 +1,9 @@
-use std::{
-    io::{self, Write},
-    process,
-};
+use std::io::{self, Write};
 
 use statement::Statement;
 use table::Table;
 
+pub mod pager;
 pub mod row;
 pub mod statement;
 pub mod table;
@@ -16,8 +14,15 @@ pub enum MetaCommandErr {
     UnrecognizedCommand,
 }
 
+pub struct ExitSuccess;
+
 fn main() {
-    let mut table = Table::new();
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        panic!("Must supply a database filename.");
+    }
+
+    let mut table = Table::db_open(&args[1]);
 
     let mut input_buffer = InputBuffer::new();
     loop {
@@ -29,7 +34,10 @@ fn main() {
 
         if buffer[0] == '.' {
             match do_meta_command(&input_buffer) {
-                Ok(()) => continue,
+                Ok(ExitSuccess) => {
+                    drop(table);
+                    break;
+                }
                 Err(MetaCommandErr::UnrecognizedCommand) => {
                     println!("Unrecognized keyword at start of '{}'.", input_buffer);
                     continue;
@@ -67,9 +75,9 @@ fn read_input(input_buffer: &mut InputBuffer) {
     *input_buffer = input_buffer.trim_end().to_owned();
 }
 
-fn do_meta_command(input_buffer: &InputBuffer) -> Result<(), MetaCommandErr> {
+fn do_meta_command(input_buffer: &InputBuffer) -> Result<ExitSuccess, MetaCommandErr> {
     if input_buffer == ".exit" {
-        process::exit(0);
+        Ok(ExitSuccess)
     } else {
         Err(MetaCommandErr::UnrecognizedCommand)
     }
