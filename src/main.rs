@@ -1,9 +1,15 @@
 use std::io::{self, Write};
 
+use node::{
+    NodeProxy, COMMON_NODE_HEADER_SIZE, LEAF_NODE_CELL_SIZE, LEAF_NODE_HEADER_SIZE,
+    LEAF_NODE_MAX_CELLS, LEAF_NODE_SPACE_FOR_CELLS,
+};
+use row::ROW_SIZE;
 use statement::Statement;
 use table::Table;
 
 pub mod cursor;
+pub mod node;
 pub mod pager;
 pub mod row;
 pub mod statement;
@@ -13,6 +19,11 @@ type InputBuffer = String;
 
 pub enum MetaCommandErr {
     UnrecognizedCommand,
+}
+
+pub enum MetaCommandOk {
+    ExitSuccess,
+    CommandSuccess,
 }
 
 pub struct ExitSuccess;
@@ -34,10 +45,13 @@ fn main() {
         let buffer: Vec<char> = input_buffer.chars().collect();
 
         if buffer[0] == '.' {
-            match do_meta_command(&input_buffer) {
-                Ok(ExitSuccess) => {
+            match do_meta_command(&input_buffer, &mut table) {
+                Ok(MetaCommandOk::ExitSuccess) => {
                     drop(table);
                     break;
+                }
+                Ok(MetaCommandOk::CommandSuccess) => {
+                    continue;
                 }
                 Err(MetaCommandErr::UnrecognizedCommand) => {
                     println!("Unrecognized keyword at start of '{}'.", input_buffer);
@@ -76,10 +90,32 @@ fn read_input(input_buffer: &mut InputBuffer) {
     *input_buffer = input_buffer.trim_end().to_owned();
 }
 
-fn do_meta_command(input_buffer: &InputBuffer) -> Result<ExitSuccess, MetaCommandErr> {
+fn do_meta_command(
+    input_buffer: &InputBuffer,
+    table: &mut Table,
+) -> Result<MetaCommandOk, MetaCommandErr> {
     if input_buffer == ".exit" {
-        Ok(ExitSuccess)
+        Ok(MetaCommandOk::ExitSuccess)
+    } else if input_buffer == ".constants" {
+        println!("Constants:");
+        print_constants();
+        Ok(MetaCommandOk::CommandSuccess)
+    } else if input_buffer == ".btree" {
+        println!("Tree:");
+        let node = table.pager.get_page(0);
+        let node_proxy = NodeProxy::new(node);
+        print!("{node_proxy}");
+        Ok(MetaCommandOk::CommandSuccess)
     } else {
         Err(MetaCommandErr::UnrecognizedCommand)
     }
+}
+
+fn print_constants() {
+    println!("ROW_SIZE: {}", ROW_SIZE);
+    println!("COMMON_NODE_HEADER_SIZE: {}", COMMON_NODE_HEADER_SIZE);
+    println!("LEAF_NODE_HEADER_SIZE: {}", LEAF_NODE_HEADER_SIZE);
+    println!("LEAF_NODE_CELL_SIZE: {}", LEAF_NODE_CELL_SIZE);
+    println!("LEAF_NODE_SPACE_FOR_CELLS: {}", LEAF_NODE_SPACE_FOR_CELLS);
+    println!("LEAF_NODE_MAX_CELLS: {}", LEAF_NODE_MAX_CELLS);
 }

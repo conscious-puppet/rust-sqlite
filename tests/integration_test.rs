@@ -147,6 +147,50 @@ fn keeps_data_after_closing_connection() {
     drop(tempfile);
 }
 
+#[test]
+fn prints_constants() {
+    let tempfile = TempFile::new();
+
+    let input = vec![".constants".to_owned(), ".exit".to_owned()];
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec![
+        "db > Constants:".to_owned(),
+        "ROW_SIZE: 291".to_owned(),
+        "COMMON_NODE_HEADER_SIZE: 6".to_owned(),
+        "LEAF_NODE_HEADER_SIZE: 10".to_owned(),
+        "LEAF_NODE_CELL_SIZE: 295".to_owned(),
+        "LEAF_NODE_SPACE_FOR_CELLS: 4086".to_owned(),
+        "LEAF_NODE_MAX_CELLS: 13".to_owned(),
+        "db > ".to_owned(),
+    ];
+    assert_eq!(output, expected_output);
+}
+
+#[test]
+fn allows_printing_out_the_structure_of_a_one_node_btree() {
+    let tempfile = TempFile::new();
+
+    let mut input: Vec<_> = [3, 1, 2]
+        .iter()
+        .map(|i| format!("insert {i} user{i} person{i}@example.com"))
+        .collect();
+    input.push(".btree".to_owned());
+    input.push(".exit".to_owned());
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec![
+        "db > Executed.".to_owned(),
+        "db > Executed.".to_owned(),
+        "db > Executed.".to_owned(),
+        "db > Tree:".to_owned(),
+        "leaf (size 3)".to_owned(),
+        "  - 0 : 3".to_owned(),
+        "  - 1 : 1".to_owned(),
+        "  - 2 : 2".to_owned(),
+        "db > ".to_owned(),
+    ];
+    assert_eq!(output, expected_output);
+}
+
 fn spawn_rust_sqlite(tempfile: &TempFile, input: Vec<String>) -> Vec<String> {
     let mut process = rust_sqlite_exe()
         .arg(&tempfile.filepath)

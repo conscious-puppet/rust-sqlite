@@ -2,8 +2,9 @@ use std::borrow::Cow;
 use std::fmt;
 
 use crate::cursor::Cursor;
+use crate::node::{LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE};
 use crate::row::Row;
-use crate::table::{Table, TABLE_MAX_ROWS};
+use crate::table::Table;
 use crate::InputBuffer;
 
 pub enum Statement {
@@ -79,22 +80,27 @@ impl Statement {
     fn execute_select(table: &mut Table) -> Result<(), ExecuteErr> {
         let mut cursor = Cursor::table_start(table);
         while !cursor.end_of_table {
-            let row = cursor.value().map(|cv| Row::deserialize(cv));
+            let row = Row::deserialize(cursor.value());
             cursor.advance();
-            if let Some(row) = row {
-                println!("{}", row);
-            }
+            println!("{}", row);
         }
         Ok(())
     }
 
     fn execute_insert(row: Row, table: &mut Table) -> Result<(), ExecuteErr> {
-        if table.num_rows >= TABLE_MAX_ROWS {
+        let node = table.pager.get_page(table.root_page_num);
+
+        let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
+        num_cells_bytes.copy_from_slice(node.leaf_node_num_cells());
+        let num_cells = u32::from_le_bytes(num_cells_bytes);
+
+        if num_cells as usize >= LEAF_NODE_MAX_CELLS {
             return Err(ExecuteErr::ExecuteTableFull);
         }
+
         let mut cursor = Cursor::table_end(table);
-        cursor.value().map(|cv| row.serialize(cv));
-        cursor.table.num_rows += 1;
+        cursor.leaf_node_insert(row.id, row);
+
         Ok(())
     }
 }

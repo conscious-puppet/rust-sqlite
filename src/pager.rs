@@ -1,17 +1,16 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
 
-use crate::row::ROW_SIZE;
+use crate::node::Node;
 
-const PAGE_SIZE: usize = 4096;
-const TABLE_MAX_PAGES: usize = 100;
-const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
-pub const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
+pub const PAGE_SIZE: usize = 4096;
+pub const TABLE_MAX_PAGES: usize = 100;
 
 pub struct Pager {
     file: File,
     file_length: u64,
-    pages: Box<[Option<[u8; PAGE_SIZE]>; TABLE_MAX_PAGES]>,
+    pub num_pages: u32,
+    pages: Vec<Node>,
 }
 
 impl Pager {
@@ -30,13 +29,18 @@ impl Pager {
         };
 
         let file_length = metadata.len();
+        let num_pages = (file_length / PAGE_SIZE as u64) as u32;
 
-        // TODO: not efficient. the memory is preallocated here.
-        let pages = Box::new([None; TABLE_MAX_PAGES]);
+        if file_length % PAGE_SIZE as u64 != 0 {
+            panic!("Db file is not a whole number of pages. Corrupt file.")
+        }
+
+        let pages = Vec::new();
 
         Self {
             file,
             file_length,
+            num_pages,
             pages,
         }
     }
@@ -45,8 +49,8 @@ impl Pager {
         self.file_length
     }
 
-    fn validate_page_num(page_num: usize) {
-        if page_num > TABLE_MAX_PAGES {
+    fn validate_page_num(page_num: u32) {
+        if page_num as usize > TABLE_MAX_PAGES {
             panic!(
                 "Tried to fetch page number out of bounds. {} > {}",
                 page_num, TABLE_MAX_PAGES
@@ -54,52 +58,53 @@ impl Pager {
         }
     }
 
-    pub fn get_page(&mut self, page_num: usize) -> Option<&mut [u8; PAGE_SIZE]> {
+    pub fn get_page(&mut self, page_num: u32) -> &mut Node {
         Self::validate_page_num(page_num);
 
-        // TODO: memory is preallocated.
-        // in case of Cache miss, Allocate memory and load from file.
-        let mut page = self.pages[page_num].take().unwrap_or([0; PAGE_SIZE]);
+        // Cache miss. Allocate memory and load from file.
+        if self.pages.get(page_num as usize).is_none() {
+            self.pages.push(Node::initialize_leaf_node());
 
-        let mut num_pages = self.file_length / PAGE_SIZE as u64;
+            let page = &mut self.pages[page_num as usize];
 
-        // We might have partial page at the end of the file
-        if self.file_length % PAGE_SIZE as u64 != 0 {
-            num_pages += 1;
+            let mut num_pages = self.file_length / PAGE_SIZE as u64;
+
+            // We might have partial page at the end of the file
+            if self.file_length % PAGE_SIZE as u64 != 0 {
+                num_pages += 1;
+            }
+
+            if page_num as u64 <= num_pages {
+                let offset = page_num as usize * PAGE_SIZE;
+                self.file
+                    .seek(std::io::SeekFrom::Start(offset as u64))
+                    .expect("Unable to seek file.");
+
+                self.file
+                    .read(&mut page.0)
+                    .expect("Unable to read file to a buffer.");
+            }
+
+            if page_num as u32 >= self.num_pages {
+                self.num_pages = page_num + 1;
+            }
         }
 
-        if page_num as u64 <= num_pages {
-            let offset = page_num * PAGE_SIZE;
-            self.file
-                .seek(std::io::SeekFrom::Current(offset as i64))
-                .expect("Unable to seek file.");
-
-            self.file
-                .read(&mut page)
-                .expect("Unable to read file to a buffer.");
-        }
-
-        self.pages[page_num] = Some(page);
-
-        self.pages[page_num].as_mut()
+        &mut self.pages[page_num as usize]
     }
 
-    pub fn pager_flush(&mut self, page_num: usize, size: usize) {
+    pub fn pager_flush(&mut self, page_num: u32) {
         Self::validate_page_num(page_num);
 
-        if self.pages[page_num].is_none() {
-            panic!("Tried to flush null page.");
-        }
+        // Load page, if not loaded previously
+        let _ = self.get_page(page_num);
 
-        let offset = page_num * PAGE_SIZE;
+        let offset = page_num as usize * PAGE_SIZE;
         self.file
-            .seek(std::io::SeekFrom::Current(offset as i64))
+            .seek(std::io::SeekFrom::Start(offset as u64))
             .expect("Unable to seek file.");
 
-        let default_page = [0; PAGE_SIZE];
-        let page = self.pages[page_num].unwrap_or(default_page);
-        let page = &page[..size];
-        self.file.write(page).expect("Unable to write to file.");
-        self.pages[page_num] = None;
+        let page = &self.pages[page_num as usize];
+        self.file.write(&page.0).expect("Unable to write to file.");
     }
 }
