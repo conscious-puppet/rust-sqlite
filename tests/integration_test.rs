@@ -183,9 +183,30 @@ fn allows_printing_out_the_structure_of_a_one_node_btree() {
         "db > Executed.".to_owned(),
         "db > Tree:".to_owned(),
         "leaf (size 3)".to_owned(),
-        "  - 0 : 3".to_owned(),
-        "  - 1 : 1".to_owned(),
-        "  - 2 : 2".to_owned(),
+        "  - 0 : 1".to_owned(),
+        "  - 1 : 2".to_owned(),
+        "  - 2 : 3".to_owned(),
+        "db > ".to_owned(),
+    ];
+    assert_eq!(output, expected_output);
+}
+
+#[test]
+fn prints_an_error_message_if_there_is_a_duplicate_id() {
+    let tempfile = TempFile::new();
+
+    let input = vec![
+        "insert 1 user1 person1@example.com".to_owned(),
+        "insert 1 user1 person1@example.com".to_owned(),
+        "select".to_owned(),
+        ".exit".to_owned(),
+    ];
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec![
+        "db > Executed.".to_owned(),
+        "db > Error: Duplicate key.".to_owned(),
+        "db > (1, user1, person1@example.com)".to_owned(),
+        "Executed.".to_owned(),
         "db > ".to_owned(),
     ];
     assert_eq!(output, expected_output);

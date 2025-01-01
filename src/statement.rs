@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 use crate::cursor::Cursor;
-use crate::node::{LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE};
+use crate::node::{LEAF_NODE_KEY_SIZE, LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE};
 use crate::row::Row;
 use crate::table::Table;
 use crate::InputBuffer;
@@ -39,14 +39,18 @@ impl<'a> fmt::Display for PrepareStatementErr<'a> {
 }
 
 pub enum ExecuteErr {
-    ExecuteTableFull,
+    TableFull,
+    DuplicateKey,
 }
 
 impl fmt::Display for ExecuteErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            &ExecuteErr::ExecuteTableFull => {
+            &ExecuteErr::TableFull => {
                 write!(f, "Error: Table full.")
+            }
+            &ExecuteErr::DuplicateKey => {
+                write!(f, "Error: Duplicate key.")
             }
         }
     }
@@ -95,12 +99,25 @@ impl Statement {
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
         if num_cells as usize >= LEAF_NODE_MAX_CELLS {
-            return Err(ExecuteErr::ExecuteTableFull);
+            return Err(ExecuteErr::TableFull);
         }
 
-        let mut cursor = Cursor::table_end(table);
-        cursor.leaf_node_insert(row.id, row);
+        let key_to_insert = row.id;
+        let mut cursor = Cursor::table_find(table, key_to_insert);
+        let cell_num = cursor.cell_num;
 
+        if cell_num < num_cells {
+            let mut key_at_index_bytes = [0; LEAF_NODE_KEY_SIZE];
+            let node = cursor.table.pager.get_page(cursor.table.root_page_num);
+            key_at_index_bytes.copy_from_slice(node.leaf_node_key(cell_num));
+            let key_at_index = u32::from_le_bytes(key_at_index_bytes);
+
+            if key_at_index == key_to_insert {
+                return Err(ExecuteErr::DuplicateKey);
+            }
+        }
+
+        cursor.leaf_node_insert(row.id, row);
         Ok(())
     }
 }

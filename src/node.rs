@@ -25,9 +25,27 @@ pub const LEAF_NODE_CELL_SIZE: usize = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
 pub const LEAF_NODE_SPACE_FOR_CELLS: usize = PAGE_SIZE - LEAF_NODE_HEADER_SIZE;
 pub const LEAF_NODE_MAX_CELLS: usize = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
 
+#[derive(PartialEq, Eq)]
 pub enum NodeType {
-    Internal,
     Leaf,
+    Internal,
+}
+
+impl NodeType {
+    pub fn to_bytes(&self) -> [u8; 1] {
+        match *self {
+            NodeType::Leaf => [0],
+            NodeType::Internal => [1],
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        match *bytes {
+            [0] => NodeType::Leaf,
+            [1] => NodeType::Internal,
+            _ => panic!("Undefined node type."),
+        }
+    }
 }
 
 /// Leaf Node Format
@@ -53,7 +71,9 @@ pub struct Node(pub [u8; PAGE_SIZE]);
 
 impl Node {
     pub fn initialize_leaf_node() -> Self {
-        Self([0; PAGE_SIZE])
+        let mut node = Self([0; PAGE_SIZE]);
+        Node::set_node_type(&mut node, NodeType::Leaf);
+        node
     }
 
     pub fn leaf_node_num_cells(&mut self) -> &mut [u8] {
@@ -80,6 +100,19 @@ impl Node {
         let start = LEAF_NODE_VALUE_OFFSET;
         let end = start + LEAF_NODE_VALUE_SIZE;
         &mut leaf_node_cell[start..end]
+    }
+
+    pub fn get_node_type(&self) -> NodeType {
+        let start = NODE_TYPE_OFFSET;
+        let end = start + NODE_TYPE_SIZE;
+        NodeType::from_bytes(&self.0[start..end])
+    }
+
+    pub fn set_node_type(&mut self, node_type: NodeType) {
+        let start = NODE_TYPE_OFFSET;
+        let end = start + NODE_TYPE_SIZE;
+        let node_type = node_type.to_bytes();
+        self.0[start..end].copy_from_slice(&node_type);
     }
 }
 

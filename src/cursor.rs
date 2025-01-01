@@ -1,5 +1,8 @@
 use crate::{
-    node::{LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE},
+    node::{
+        NodeType, LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_MAX_CELLS,
+        LEAF_NODE_NUM_CELLS_SIZE,
+    },
     row::Row,
     table::Table,
 };
@@ -7,7 +10,7 @@ use crate::{
 pub struct Cursor<'a> {
     pub table: &'a mut Table,
     page_num: u32,
-    cell_num: u32,
+    pub cell_num: u32,
     pub end_of_table: bool, // Indicates a position one past the last element
 }
 
@@ -32,24 +35,57 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub fn table_end(table: &'a mut Table) -> Self {
-        let page_num = table.root_page_num;
+    /// Return the position of the given key.
+    /// If the key is not present, return the position
+    /// where it should be inserted
+    pub fn table_find(table: &'a mut Table, key: u32) -> Self {
+        let root_page_num = table.root_page_num;
+        let root_node = table.pager.get_page(root_page_num);
 
-        let root_node = table.pager.get_page(page_num);
+        if root_node.get_node_type() == NodeType::Leaf {
+            Cursor::leaf_node_find(table, root_page_num, key)
+        } else {
+            todo!("Need to implement searching an internal node.");
+        }
+    }
+
+    pub fn leaf_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
+        let node = table.pager.get_page(page_num);
 
         let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
-        num_cells_bytes.copy_from_slice(root_node.leaf_node_num_cells());
+        num_cells_bytes.copy_from_slice(node.leaf_node_num_cells());
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
-        let cell_num = num_cells;
+        // Binary search
+        let mut min_index = 0;
+        let mut one_past_max_index = num_cells;
+        let mut cell_num = None;
 
-        let end_of_table = true;
+        while one_past_max_index != min_index {
+            let index = (min_index + one_past_max_index) / 2;
+
+            let mut key_at_index_bytes = [0; LEAF_NODE_KEY_SIZE];
+            key_at_index_bytes.copy_from_slice(node.leaf_node_key(index));
+            let key_at_index = u32::from_le_bytes(key_at_index_bytes);
+
+            if key == key_at_index {
+                cell_num = Some(index);
+                break;
+            }
+            if key < key_at_index {
+                one_past_max_index = index;
+            } else {
+                min_index = index + 1;
+            }
+        }
+
+        let cell_num = cell_num.unwrap_or(min_index);
 
         Self {
             table,
             page_num,
             cell_num,
-            end_of_table,
+            end_of_table: false,
         }
     }
 
@@ -82,6 +118,17 @@ impl<'a> Cursor<'a> {
 
         if num_cells as usize >= LEAF_NODE_MAX_CELLS {
             panic!("Need to implement splitting a leaf node.");
+        }
+
+        if self.cell_num < num_cells {
+            // Make room for new cell
+            let mut i = num_cells;
+            while i > self.cell_num {
+                let mut prev = [0; LEAF_NODE_CELL_SIZE];
+                prev.copy_from_slice(node.leaf_node_cell(i - 1));
+                node.leaf_node_cell(i).copy_from_slice(&prev);
+                i -= 1;
+            }
         }
 
         let num_cells = num_cells + 1;
