@@ -1,7 +1,7 @@
 use crate::{
     node::{
-        NodeType, LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_MAX_CELLS,
-        LEAF_NODE_NUM_CELLS_SIZE,
+        NodeType, LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_LEFT_SPLIT_COUNT,
+        LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE, LEAF_NODE_RIGHT_SPLIT_COUNT,
     },
     row::Row,
     table::Table,
@@ -10,7 +10,7 @@ use crate::{
 pub struct Cursor<'a> {
     pub table: &'a mut Table,
     page_num: u32,
-    pub cell_num: u32,
+    pub cell_num: u32,      // Indicates the row num
     pub end_of_table: bool, // Indicates a position one past the last element
 }
 
@@ -45,7 +45,8 @@ impl<'a> Cursor<'a> {
         if root_node.get_node_type() == NodeType::Leaf {
             Cursor::leaf_node_find(table, root_page_num, key)
         } else {
-            todo!("Need to implement searching an internal node.");
+            println!("Need to implement searching an internal node.");
+            todo!()
         }
     }
 
@@ -117,7 +118,8 @@ impl<'a> Cursor<'a> {
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
         if num_cells as usize >= LEAF_NODE_MAX_CELLS {
-            panic!("Need to implement splitting a leaf node.");
+            self.leaf_node_split_and_insert(key, row);
+            return;
         }
 
         if self.cell_num < num_cells {
@@ -140,5 +142,54 @@ impl<'a> Cursor<'a> {
             .copy_from_slice(&key.to_le_bytes());
 
         row.serialize(node.leaf_node_value(self.cell_num));
+    }
+
+    /// Create a new node and move half the cells over.
+    /// Insert the new value in one of the two nodes.
+    /// Update parent or create a new parent.
+    fn leaf_node_split_and_insert(&mut self, _key: u32, row: Row) {
+        let new_page_num = self.table.pager.get_unused_page_num();
+
+        // All existing keys plus new key should be divided
+        // evenly between old (left) and new (right) nodes.
+        // Starting from the right, move each key to correct position.
+        for i in (0..=LEAF_NODE_MAX_CELLS).rev() {
+            let mut old_node = self.table.pager.get_page(self.page_num).clone();
+            let destination_node = if i >= LEAF_NODE_LEFT_SPLIT_COUNT {
+                self.table.pager.get_page(new_page_num)
+            } else {
+                self.table.pager.get_page(self.page_num)
+            };
+
+            let index_within_node = i % LEAF_NODE_LEFT_SPLIT_COUNT;
+            let destination = destination_node.leaf_node_cell(index_within_node as u32);
+
+            if i == self.cell_num as usize {
+                row.serialize(destination);
+            } else if i > self.cell_num as usize {
+                destination.copy_from_slice(old_node.leaf_node_cell(i as u32 - 1));
+            } else {
+                destination.copy_from_slice(old_node.leaf_node_cell(i as u32));
+            }
+        }
+
+        // Update cell count on both leaf nodes
+        let right_split_num_cells_bytes = (LEAF_NODE_RIGHT_SPLIT_COUNT as u32).to_le_bytes();
+        let new_node = self.table.pager.get_page(new_page_num);
+        new_node
+            .leaf_node_num_cells()
+            .copy_from_slice(&right_split_num_cells_bytes);
+
+        let left_split_num_cells_bytes = (LEAF_NODE_LEFT_SPLIT_COUNT as u32).to_le_bytes();
+        let old_node = self.table.pager.get_page(self.page_num);
+        old_node
+            .leaf_node_num_cells()
+            .copy_from_slice(&left_split_num_cells_bytes);
+
+        if old_node.is_node_root() {
+            self.table.create_new_root(new_page_num);
+        } else {
+            todo!("Need to implement updating parent after split.")
+        }
     }
 }

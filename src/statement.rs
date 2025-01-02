@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 use crate::cursor::Cursor;
-use crate::node::{LEAF_NODE_KEY_SIZE, LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE};
+use crate::node::{LEAF_NODE_KEY_SIZE, LEAF_NODE_NUM_CELLS_SIZE};
 use crate::row::Row;
 use crate::table::Table;
 use crate::InputBuffer;
@@ -98,17 +98,14 @@ impl Statement {
         num_cells_bytes.copy_from_slice(node.leaf_node_num_cells());
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
-        if num_cells as usize >= LEAF_NODE_MAX_CELLS {
-            return Err(ExecuteErr::TableFull);
-        }
-
         let key_to_insert = row.id;
         let mut cursor = Cursor::table_find(table, key_to_insert);
         let cell_num = cursor.cell_num;
 
         if cell_num < num_cells {
-            let mut key_at_index_bytes = [0; LEAF_NODE_KEY_SIZE];
             let node = cursor.table.pager.get_page(cursor.table.root_page_num);
+
+            let mut key_at_index_bytes = [0; LEAF_NODE_KEY_SIZE];
             key_at_index_bytes.copy_from_slice(node.leaf_node_key(cell_num));
             let key_at_index = u32::from_le_bytes(key_at_index_bytes);
 

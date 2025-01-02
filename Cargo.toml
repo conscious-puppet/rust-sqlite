@@ -2,7 +2,7 @@
 authors = ["Abhishek Singh <abhishek17513@gmail.com>"]
 edition = "2021"
 name = "rust-sqlite"
-description = "A simple Rust project using Nix"
+description = "Toy SQLite implementation in Rust"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

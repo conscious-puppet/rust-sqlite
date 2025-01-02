@@ -24,8 +24,9 @@ fn insert_and_retrieve_row() {
     assert_eq!(output, expected_output);
 }
 
-#[test]
-fn print_error_when_row_is_full() {
+// #[test]
+// FIXME: the test is failing because TABLE_FULL error has been removed.
+fn _print_error_when_row_is_full() {
     let mut input: Vec<_> = (0..=1400)
         .map(|i| format!("insert {i} user{i} person{i}@example.com"))
         .collect();
@@ -182,13 +183,53 @@ fn allows_printing_out_the_structure_of_a_one_node_btree() {
         "db > Executed.".to_owned(),
         "db > Executed.".to_owned(),
         "db > Tree:".to_owned(),
-        "leaf (size 3)".to_owned(),
-        "  - 0 : 1".to_owned(),
-        "  - 1 : 2".to_owned(),
-        "  - 2 : 3".to_owned(),
+        "- leaf (size 3)".to_owned(),
+        " - 1".to_owned(),
+        " - 2".to_owned(),
+        " - 3".to_owned(),
         "db > ".to_owned(),
     ];
     assert_eq!(output, expected_output);
+}
+
+#[test]
+fn allows_printing_out_the_structure_of_a_3_leaf_node_btree() {
+    let tempfile = TempFile::new();
+
+    let mut input: Vec<_> = (1..=14)
+        .map(|i| format!("insert {i} user{i} person{i}@example.com"))
+        .collect();
+    input.push(".btree".to_owned());
+    input.push("insert 15 user15 person15@example.com".to_owned());
+    input.push(".exit".to_owned());
+
+    let output = spawn_rust_sqlite(&tempfile, input);
+
+    println!("output: {:?}", output);
+
+    let expected_output = vec![
+        "db > Tree:".to_owned(),
+        "- internal (size 1)".to_owned(),
+        " - leaf (size 7)".to_owned(),
+        "  - 1".to_owned(),
+        "  - 2".to_owned(),
+        "  - 3".to_owned(),
+        "  - 4".to_owned(),
+        "  - 5".to_owned(),
+        "  - 6".to_owned(),
+        "  - 7".to_owned(),
+        " - key 7".to_owned(),
+        " - leaf (size 7)".to_owned(),
+        "  - 8".to_owned(),
+        "  - 9".to_owned(),
+        "  - 10".to_owned(),
+        "  - 11".to_owned(),
+        "  - 12".to_owned(),
+        "  - 13".to_owned(),
+        "  - 14".to_owned(),
+        "db > Need to implement searching an internal node.".to_owned(),
+    ];
+    assert_eq!(output[14..], expected_output);
 }
 
 #[test]

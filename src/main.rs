@@ -1,9 +1,10 @@
 use std::io::{self, Write};
 
 use node::{
-    NodeProxy, COMMON_NODE_HEADER_SIZE, LEAF_NODE_CELL_SIZE, LEAF_NODE_HEADER_SIZE,
-    LEAF_NODE_MAX_CELLS, LEAF_NODE_SPACE_FOR_CELLS,
+    COMMON_NODE_HEADER_SIZE, LEAF_NODE_CELL_SIZE, LEAF_NODE_HEADER_SIZE, LEAF_NODE_MAX_CELLS,
+    LEAF_NODE_SPACE_FOR_CELLS,
 };
+use pager::PagerProxy;
 use row::ROW_SIZE;
 use statement::Statement;
 use table::Table;
@@ -102,9 +103,9 @@ fn do_meta_command(
         Ok(MetaCommandOk::CommandSuccess)
     } else if input_buffer == ".btree" {
         println!("Tree:");
-        let node = table.pager.get_page(0);
-        let node_proxy = NodeProxy::new(node);
-        print!("{node_proxy}");
+        let pager = &mut table.pager;
+        let pager_proxy = PagerProxy::new(pager);
+        print!("{pager_proxy}");
         Ok(MetaCommandOk::CommandSuccess)
     } else {
         Err(MetaCommandErr::UnrecognizedCommand)
