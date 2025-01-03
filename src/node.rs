@@ -12,7 +12,10 @@ pub const COMMON_NODE_HEADER_SIZE: usize = NODE_TYPE_SIZE + IS_ROOT_SIZE + PAREN
 // Leaf Node Header Layout
 pub const LEAF_NODE_NUM_CELLS_SIZE: usize = std::mem::size_of::<u32>();
 pub const LEAF_NODE_NUM_CELLS_OFFSET: usize = COMMON_NODE_HEADER_SIZE;
-pub const LEAF_NODE_HEADER_SIZE: usize = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE;
+pub const LEAF_NODE_NEXT_LEAF_SIZE: usize = std::mem::size_of::<u32>();
+pub const LEAF_NODE_NEXT_LEAF_OFFSET: usize = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE;
+pub const LEAF_NODE_HEADER_SIZE: usize =
+    COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_NEXT_LEAF_SIZE;
 
 // Leaf Node Body Layout
 pub const LEAF_NODE_KEY_SIZE: usize = std::mem::size_of::<u32>();
@@ -65,30 +68,30 @@ impl NodeType {
 }
 
 /// Leaf Node Format
-/// |-------------+----------------+----------------+-----------|
-/// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 |
-/// | node_type   | is_root        | parent_pointer | num_cells |
-/// |-------------+----------------+----------------+-----------|
-/// | bytes 10-13                  | bytes 14-304               |
-/// | key 0                        | value 0                    |
-/// |------------------------------+----------------------------|
-/// | bytes 305-308                | bytes 309-601              |
-/// | key 1                        | value 1                    |
-/// |------------------------------+----------------------------|
-/// |             ...              |          ...               |
-/// |------------------------------+----------------------------|
-/// | bytes 3550-3553              | bytes 3554-3844            |
-/// | key 12                       | value 12                   |
-/// |------------------------------+----------------------------|
-/// |                       bytes 3845-4095                     |
-/// |                         wasted space                      |
-/// |-----------------------------------------------------------|
+/// |-------------+----------------+----------------+-----------+--------------------|
+/// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13        |
+/// | node_type   | is_root        | parent_pointer | num_cells | left_leaf_pointer  |
+/// |-------------+----------------+----------------+-----------+--------------------|
+/// | bytes 14-17                  | bytes 18-308                                    |
+/// | key 0                        | value 0                                         |
+/// |------------------------------+-------------------------------------------------|
+/// | bytes 309-312                | bytes 313-603                                   |
+/// | key 1                        | value 1                                         |
+/// |------------------------------+-------------------------------------------------|
+/// |             ...              |          ...                                    |
+/// |------------------------------+-------------------------------------------------|
+/// | bytes 3554-3557              | bytes 3558-3848                                 |
+/// | key 12                       | value 12                                        |
+/// |------------------------------+-------------------------------------------------|
+/// |                                 bytes 3849-4095                                |
+/// |                                  wasted space                                  |
+/// |--------------------------------------------------------------------------------|
 ///
 ///
 /// Internal Node Format
 /// |-----------+---------+----------------+-----------+---------------------|
 /// | byte 0    | byte 1  | bytes 2-5      | bytes 6-9 | bytes 10-13         |
-/// | node_type | is_root | parent_pointer | num_keys  | right child pointer |
+/// | node_type | is_root | parent_pointer | num_keys  | right_child_pointer |
 /// |-----------+---------+----------------+-----------+---------------------|
 /// | bytes 14-17                         | bytes 18-21                      |
 /// | child pointer 0                     | key 0                            |
@@ -247,5 +250,11 @@ impl Node {
         let start = INTERNAL_NODE_CHILD_SIZE;
         let end = start + INTERNAL_NODE_KEY_SIZE;
         &mut self.internal_node_cell(key_num)[start..end]
+    }
+
+    pub fn leaf_node_next_leaf(&mut self) -> &mut [u8] {
+        let start = LEAF_NODE_NEXT_LEAF_OFFSET;
+        let end = start + LEAF_NODE_NEXT_LEAF_SIZE;
+        &mut self.0[start..end]
     }
 }

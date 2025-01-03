@@ -2,7 +2,7 @@ use crate::{
     node::{
         NodeType, INTERNAL_NODE_CHILD_SIZE, INTERNAL_NODE_KEY_SIZE, INTERNAL_NODE_NUM_KEYS_SIZE,
         LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_LEFT_SPLIT_COUNT, LEAF_NODE_MAX_CELLS,
-        LEAF_NODE_NUM_CELLS_SIZE, LEAF_NODE_RIGHT_SPLIT_COUNT,
+        LEAF_NODE_NEXT_LEAF_SIZE, LEAF_NODE_NUM_CELLS_SIZE, LEAF_NODE_RIGHT_SPLIT_COUNT,
     },
     row::Row,
     table::Table,
@@ -17,23 +17,19 @@ pub struct Cursor<'a> {
 
 impl<'a> Cursor<'a> {
     pub fn table_start(table: &'a mut Table) -> Self {
-        let page_num = table.root_page_num;
-        let cell_num = 0;
+        let cursor = Cursor::table_find(table, 0);
 
-        let root_node = table.pager.get_page(page_num);
+        let page_num = cursor.page_num;
+        let node = table.pager.get_page(page_num);
 
         let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
-        num_cells_bytes.copy_from_slice(root_node.leaf_node_num_cells());
+        num_cells_bytes.copy_from_slice(node.leaf_node_num_cells());
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
-        let end_of_table = num_cells == 0;
+        let mut cursor = Cursor::table_find(table, 0);
+        cursor.end_of_table = num_cells == 0;
 
-        Self {
-            table,
-            page_num,
-            cell_num,
-            end_of_table,
-        }
+        cursor
     }
 
     /// Return the position of the given key.
@@ -143,7 +139,18 @@ impl<'a> Cursor<'a> {
         let num_cells = u32::from_le_bytes(num_cells_bytes);
 
         if self.cell_num >= num_cells {
-            self.end_of_table = true;
+            // Advance to next leaf node
+            let mut next_page_num_bytes = [0; LEAF_NODE_NEXT_LEAF_SIZE];
+            next_page_num_bytes.copy_from_slice(node.leaf_node_next_leaf());
+            let next_page_num = u32::from_le_bytes(next_page_num_bytes);
+
+            if next_page_num == 0 {
+                // This is the right most leaf
+                self.end_of_table = true;
+            } else {
+                self.page_num = next_page_num;
+                self.cell_num = 0;
+            }
         }
     }
 
@@ -184,8 +191,17 @@ impl<'a> Cursor<'a> {
     /// Create a new node and move half the cells over.
     /// Insert the new value in one of the two nodes.
     /// Update parent or create a new parent.
-    fn leaf_node_split_and_insert(&mut self, _key: u32, row: Row) {
+    fn leaf_node_split_and_insert(&mut self, key: u32, row: Row) {
         let new_page_num = self.table.pager.get_unused_page_num();
+
+        let old_node = self.table.pager.get_page(self.page_num);
+        let mut next_node = [0; LEAF_NODE_NEXT_LEAF_SIZE];
+        next_node.copy_from_slice(old_node.leaf_node_next_leaf());
+        old_node
+            .leaf_node_next_leaf()
+            .copy_from_slice(&new_page_num.to_le_bytes());
+        let new_node = self.table.pager.get_page(new_page_num);
+        new_node.leaf_node_next_leaf().copy_from_slice(&next_node);
 
         // All existing keys plus new key should be divided
         // evenly between old (left) and new (right) nodes.
@@ -198,11 +214,15 @@ impl<'a> Cursor<'a> {
                 self.table.pager.get_page(self.page_num)
             };
 
-            let index_within_node = i % LEAF_NODE_LEFT_SPLIT_COUNT;
-            let destination = destination_node.leaf_node_cell(index_within_node as u32);
+            let index_within_node = (i % LEAF_NODE_LEFT_SPLIT_COUNT) as u32;
+            let destination = destination_node.leaf_node_cell(index_within_node);
 
             if i == self.cell_num as usize {
+                let destination = destination_node.leaf_node_value(index_within_node);
                 row.serialize(destination);
+                destination_node
+                    .leaf_node_key(index_within_node)
+                    .copy_from_slice(&key.to_le_bytes());
             } else if i > self.cell_num as usize {
                 destination.copy_from_slice(old_node.leaf_node_cell(i as u32 - 1));
             } else {
