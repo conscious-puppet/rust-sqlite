@@ -1,7 +1,8 @@
 use crate::{
     node::{
-        NodeType, LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_LEFT_SPLIT_COUNT,
-        LEAF_NODE_MAX_CELLS, LEAF_NODE_NUM_CELLS_SIZE, LEAF_NODE_RIGHT_SPLIT_COUNT,
+        NodeType, INTERNAL_NODE_CHILD_SIZE, INTERNAL_NODE_KEY_SIZE, INTERNAL_NODE_NUM_KEYS_SIZE,
+        LEAF_NODE_CELL_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_LEFT_SPLIT_COUNT, LEAF_NODE_MAX_CELLS,
+        LEAF_NODE_NUM_CELLS_SIZE, LEAF_NODE_RIGHT_SPLIT_COUNT,
     },
     row::Row,
     table::Table,
@@ -45,12 +46,11 @@ impl<'a> Cursor<'a> {
         if root_node.get_node_type() == NodeType::Leaf {
             Cursor::leaf_node_find(table, root_page_num, key)
         } else {
-            println!("Need to implement searching an internal node.");
-            todo!()
+            Cursor::internal_node_find(table, root_page_num, key)
         }
     }
 
-    pub fn leaf_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
+    fn leaf_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
         let node = table.pager.get_page(page_num);
 
         let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
@@ -87,6 +87,43 @@ impl<'a> Cursor<'a> {
             page_num,
             cell_num,
             end_of_table: false,
+        }
+    }
+
+    fn internal_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
+        let node = table.pager.get_page(page_num);
+
+        let mut num_keys_bytes = [0; INTERNAL_NODE_NUM_KEYS_SIZE];
+        num_keys_bytes.copy_from_slice(node.internal_node_num_keys());
+        let num_keys = u32::from_le_bytes(num_keys_bytes);
+
+        // Binary search to find index of child to search
+        let mut min_index = 0;
+        let mut max_index = num_keys; // there is one more child than key
+
+        while min_index != max_index {
+            let index = (min_index + max_index) / 2;
+
+            let mut key_to_right_bytes = [0; INTERNAL_NODE_KEY_SIZE];
+            key_to_right_bytes.copy_from_slice(node.internal_node_key(index));
+            let key_to_right = u32::from_le_bytes(key_to_right_bytes);
+
+            if key_to_right >= key {
+                max_index = index;
+            } else {
+                min_index = index + 1;
+            }
+        }
+
+        let mut child_num_bytes = [0; INTERNAL_NODE_CHILD_SIZE];
+        child_num_bytes.copy_from_slice(node.internal_node_child(min_index));
+        let child_num = u32::from_le_bytes(child_num_bytes);
+
+        let child = table.pager.get_page(child_num);
+
+        match child.get_node_type() {
+            NodeType::Leaf => Cursor::leaf_node_find(table, child_num, key),
+            NodeType::Internal => Cursor::internal_node_find(table, child_num, key),
         }
     }
 

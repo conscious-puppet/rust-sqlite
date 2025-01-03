@@ -227,7 +227,8 @@ fn allows_printing_out_the_structure_of_a_3_leaf_node_btree() {
         "  - 12".to_owned(),
         "  - 13".to_owned(),
         "  - 14".to_owned(),
-        "db > Need to implement searching an internal node.".to_owned(),
+        "db > Executed.".to_owned(),
+        "db > ".to_owned(),
     ];
     assert_eq!(output[14..], expected_output);
 }
