@@ -42,7 +42,7 @@ impl Table {
         // New root node points to two children.
 
         let root = self.pager.get_page(self.root_page_num);
-        let new_left_child = root.clone();
+        let new_left_child = std::mem::replace(root, Node::initialize_internal_node());
 
         let _right_child = self.pager.get_page(right_child_page_num);
         let left_child_page_num = self.pager.get_unused_page_num();
@@ -54,22 +54,11 @@ impl Table {
 
         // Root node is a new internal node with one key and two children
         let left_child_max_key = left_child.get_node_max_key();
-
         let root = self.pager.get_page(self.root_page_num);
-        *root = Node::initialize_internal_node();
         root.set_node_root(true);
-
-        let root_num_keys: u32 = 1;
-        root.internal_node_num_keys()
-            .copy_from_slice(&root_num_keys.to_le_bytes());
-
-        root.internal_node_child(0)
-            .copy_from_slice(&left_child_page_num.to_le_bytes());
-
-        root.internal_node_key(0)
-            .copy_from_slice(&left_child_max_key.to_le_bytes());
-
-        root.internal_node_right_child()
-            .copy_from_slice(&right_child_page_num.to_le_bytes());
+        *root.internal_node_num_keys() = 1;
+        *root.internal_node_child(0) = left_child_page_num;
+        *root.internal_node_key(0) = left_child_max_key;
+        *root.internal_node_right_child() = right_child_page_num;
     }
 }

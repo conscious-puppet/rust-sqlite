@@ -1,4 +1,7 @@
-use crate::{pager::PAGE_SIZE, row::ROW_SIZE};
+use crate::{
+    pager::PAGE_SIZE,
+    row::{Row, ROW_SIZE},
+};
 
 // Common Node Header Layout
 pub const NODE_TYPE_SIZE: usize = std::mem::size_of::<u8>();
@@ -44,33 +47,10 @@ pub const INTERNAL_NODE_KEY_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CHILD_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CELL_SIZE: usize = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE;
 
-#[derive(PartialEq, Eq)]
-pub enum NodeType {
-    Leaf,
-    Internal,
-}
-
-impl NodeType {
-    pub fn to_bytes(&self) -> [u8; 1] {
-        match *self {
-            NodeType::Leaf => [0],
-            NodeType::Internal => [1],
-        }
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        match *bytes {
-            [0] => NodeType::Leaf,
-            [1] => NodeType::Internal,
-            _ => panic!("Undefined node type."),
-        }
-    }
-}
-
 /// Leaf Node Format
 /// |-------------+----------------+----------------+-----------+--------------------|
 /// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13        |
-/// | node_type   | is_root        | parent_pointer | num_cells | left_leaf_pointer  |
+/// | node_type   | is_root        | parent_pointer | num_cells | next_leaf_pointer  |
 /// |-------------+----------------+----------------+-----------+--------------------|
 /// | bytes 14-17                  | bytes 18-308                                    |
 /// | key 0                        | value 0                                         |
@@ -116,145 +96,397 @@ impl NodeType {
 /// | 2                      | 511 ^ 2 = 261,121     | ~1 GB                  |
 /// | 3                      | 511 ^ 3 = 133,432,831 | ~550 GB                |
 /// |------------------------+-----------------------+------------------------|
+pub enum Node {
+    Leaf {
+        is_root: bool,
+        parent_pointer: u32,
+        num_cells: u32,
+        next_leaf_pointer: u32,
+        cells: Vec<LeafNodeCell>,
+    },
+    Internal {
+        is_root: bool,
+        parent_pointer: u32,
+        num_keys: u32,
+        right_child_pointer: u32,
+        cells: Vec<InternalNodeCell>,
+    },
+}
 
-#[derive(Clone)]
-pub struct Node(pub [u8; PAGE_SIZE]);
+pub struct LeafNodeCell {
+    key: u32,
+    value: Row,
+}
+
+impl LeafNodeCell {
+    pub fn new() -> Self {
+        let row = [0; ROW_SIZE];
+        Self {
+            key: 0,
+            value: Row::deserialize(&row),
+        }
+    }
+}
+
+pub struct InternalNodeCell {
+    child_pointer: u32,
+    key: u32,
+}
+
+impl InternalNodeCell {
+    pub fn new() -> Self {
+        Self {
+            child_pointer: 0,
+            key: 0,
+        }
+    }
+}
 
 impl Node {
     pub fn initialize_leaf_node() -> Self {
-        let mut node = Self([0; PAGE_SIZE]);
-        Node::set_node_type(&mut node, NodeType::Leaf);
-        Node::set_node_root(&mut node, false);
-        node
+        let mut cells = Vec::new();
+        for _ in 0..LEAF_NODE_MAX_CELLS {
+            cells.push(LeafNodeCell::new())
+        }
+        Node::Leaf {
+            is_root: false,
+            parent_pointer: 0,
+            num_cells: 0,
+            next_leaf_pointer: 0,
+            cells,
+        }
     }
 
     pub fn initialize_internal_node() -> Self {
-        let mut node = Self([0; PAGE_SIZE]);
-        Node::set_node_type(&mut node, NodeType::Internal);
-        Node::set_node_root(&mut node, false);
-        node
+        let mut cells = Vec::new();
+        for _ in 0..LEAF_NODE_MAX_CELLS {
+            cells.push(InternalNodeCell::new())
+        }
+        Node::Internal {
+            is_root: false,
+            parent_pointer: 0,
+            num_keys: 0,
+            right_child_pointer: 0,
+            cells,
+        }
     }
 
-    pub fn leaf_node_num_cells(&mut self) -> &mut [u8] {
-        let start = LEAF_NODE_NUM_CELLS_OFFSET;
-        let end = start + LEAF_NODE_NUM_CELLS_SIZE;
-        &mut self.0[start..end]
+    pub fn leaf_node_num_cells(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut num_cells, ..
+            } => num_cells,
+            Node::Internal {
+                ref mut num_keys, ..
+            } => num_keys,
+        }
     }
 
-    pub fn leaf_node_cell(&mut self, cell_num: u32) -> &mut [u8] {
-        let start = LEAF_NODE_HEADER_SIZE + cell_num as usize * LEAF_NODE_CELL_SIZE;
-        let end = start + LEAF_NODE_CELL_SIZE;
-        &mut self.0[start..end]
+    pub fn leaf_node_cell(&mut self, cell_num: u32) -> &mut LeafNodeCell {
+        match *self {
+            Node::Leaf { ref mut cells, .. } => &mut cells[cell_num as usize],
+            Node::Internal { .. } => panic!("leaf_node_cell: Not a leaf node"),
+        }
     }
 
-    pub fn leaf_node_key(&mut self, cell_num: u32) -> &mut [u8] {
+    pub fn leaf_node_key(&mut self, cell_num: u32) -> &mut u32 {
         let leaf_node_cell = self.leaf_node_cell(cell_num);
-        let start = LEAF_NODE_KEY_OFFSET;
-        let end = start + LEAF_NODE_KEY_SIZE;
-        &mut leaf_node_cell[start..end]
+        &mut leaf_node_cell.key
     }
 
-    pub fn leaf_node_value(&mut self, cell_num: u32) -> &mut [u8] {
+    pub fn leaf_node_value(&mut self, cell_num: u32) -> &mut Row {
         let leaf_node_cell = self.leaf_node_cell(cell_num);
-        let start = LEAF_NODE_VALUE_OFFSET;
-        let end = start + LEAF_NODE_VALUE_SIZE;
-        &mut leaf_node_cell[start..end]
-    }
-
-    pub fn get_node_type(&self) -> NodeType {
-        let start = NODE_TYPE_OFFSET;
-        let end = start + NODE_TYPE_SIZE;
-        NodeType::from_bytes(&self.0[start..end])
-    }
-
-    pub fn set_node_type(&mut self, node_type: NodeType) {
-        let start = NODE_TYPE_OFFSET;
-        let end = start + NODE_TYPE_SIZE;
-        let node_type = node_type.to_bytes();
-        self.0[start..end].copy_from_slice(&node_type);
+        &mut leaf_node_cell.value
     }
 
     pub fn is_node_root(&self) -> bool {
-        let start = IS_ROOT_OFFSET;
-        let end = start + IS_ROOT_SIZE;
-        let mut is_node_root_bytes = [0; IS_ROOT_SIZE];
-        is_node_root_bytes.copy_from_slice(&self.0[start..end]);
-        u8::from_le_bytes(is_node_root_bytes) == 1
+        match *self {
+            Node::Leaf { is_root, .. } => is_root,
+            Node::Internal { is_root, .. } => is_root,
+        }
     }
 
     pub fn set_node_root(&mut self, is_root: bool) {
-        let value = is_root as u8;
-        let start = IS_ROOT_OFFSET;
-        let end = start + IS_ROOT_SIZE;
-        self.0[start..end].copy_from_slice(&value.to_le_bytes());
+        let is_root_curr = match *self {
+            Node::Leaf {
+                ref mut is_root, ..
+            } => is_root,
+            Node::Internal {
+                ref mut is_root, ..
+            } => is_root,
+        };
+
+        *is_root_curr = is_root;
     }
 
     pub fn get_node_max_key(&mut self) -> u32 {
-        let mut max_key_bytes = [0; std::mem::size_of::<u32>()];
-        max_key_bytes.copy_from_slice(match self.get_node_type() {
-            NodeType::Internal => {
-                let mut key_num_bytes = [0; INTERNAL_NODE_NUM_KEYS_SIZE];
-                key_num_bytes.copy_from_slice(self.internal_node_num_keys());
-                let key_num = u32::from_le_bytes(key_num_bytes) - 1;
-                self.internal_node_key(key_num)
+        match *self {
+            Node::Leaf { num_cells, .. } => *self.leaf_node_key(num_cells),
+            Node::Internal { num_keys, .. } => *self.internal_node_key(num_keys),
+        }
+    }
+
+    pub fn internal_node_num_keys(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf { .. } => {
+                panic!("internal_node_num_keys: Not an internal node")
             }
-            NodeType::Leaf => {
-                let mut cell_num_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
-                cell_num_bytes.copy_from_slice(self.leaf_node_num_cells());
-                let cell_num = u32::from_le_bytes(cell_num_bytes) - 1;
-                self.leaf_node_key(cell_num)
+            Node::Internal {
+                ref mut num_keys, ..
+            } => num_keys,
+        }
+    }
+
+    pub fn internal_node_right_child(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf { .. } => {
+                panic!("internal_node_right_child: Not an internal node")
             }
-        });
-        u32::from_le_bytes(max_key_bytes)
+            Node::Internal {
+                ref mut right_child_pointer,
+                ..
+            } => right_child_pointer,
+        }
     }
 
-    pub fn internal_node_num_keys(&mut self) -> &mut [u8] {
-        let start = INTERNAL_NODE_NUM_KEYS_OFFSET;
-        let end = start + INTERNAL_NODE_NUM_KEYS_SIZE;
-        &mut self.0[start..end]
+    pub fn internal_node_cell(&mut self, key_num: u32) -> &mut InternalNodeCell {
+        match *self {
+            Node::Leaf { .. } => {
+                panic!("internal_node_right_child: Not an internal node")
+            }
+            Node::Internal { ref mut cells, .. } => &mut cells[key_num as usize],
+        }
     }
 
-    pub fn internal_node_right_child(&mut self) -> &mut [u8] {
-        let start = INTERNAL_NODE_RIGHT_CHILD_OFFSET;
-        let end = start + INTERNAL_NODE_RIGHT_CHILD_SIZE;
-        &mut self.0[start..end]
-    }
+    pub fn internal_node_child(&mut self, child_num: u32) -> &mut u32 {
+        let num_keys = self.internal_node_num_keys();
 
-    pub fn internal_node_cell(&mut self, cell_num: u32) -> &mut [u8] {
-        let start = INTERNAL_NODE_HEADER_SIZE + cell_num as usize * INTERNAL_NODE_CELL_SIZE;
-        let end = start + INTERNAL_NODE_CELL_SIZE;
-        &mut self.0[start..end]
-    }
-
-    pub fn internal_node_child(&mut self, child_num: u32) -> &mut [u8] {
-        let mut num_keys_bytes = [0; INTERNAL_NODE_NUM_KEYS_SIZE];
-        num_keys_bytes.copy_from_slice(self.internal_node_num_keys());
-        let num_keys = u32::from_le_bytes(num_keys_bytes);
-
-        if child_num > num_keys {
+        if child_num > *num_keys {
             panic!(
                 "Tried to access child_num {} > num_keys {}",
                 child_num, num_keys
             );
-        } else if child_num == num_keys {
+        } else if child_num == *num_keys {
             self.internal_node_right_child()
         } else {
-            if INTERNAL_NODE_CHILD_SIZE != INTERNAL_NODE_RIGHT_CHILD_SIZE {
-                panic!("INTERNAL_NODE_CHILD_SIZE: {INTERNAL_NODE_CHILD_SIZE} != INTERNAL_NODE_RIGHT_CHILD_SIZE: {INTERNAL_NODE_RIGHT_CHILD_SIZE}")
-            }
-            &mut self.internal_node_cell(child_num)[..INTERNAL_NODE_RIGHT_CHILD_SIZE]
+            &mut self.internal_node_cell(child_num).child_pointer
         }
     }
 
-    pub fn internal_node_key(&mut self, key_num: u32) -> &mut [u8] {
-        let start = INTERNAL_NODE_CHILD_SIZE;
-        let end = start + INTERNAL_NODE_KEY_SIZE;
-        &mut self.internal_node_cell(key_num)[start..end]
+    pub fn internal_node_key(&mut self, key_num: u32) -> &mut u32 {
+        let internal_node_cell = self.internal_node_cell(key_num);
+        &mut internal_node_cell.key
     }
 
-    pub fn leaf_node_next_leaf(&mut self) -> &mut [u8] {
-        let start = LEAF_NODE_NEXT_LEAF_OFFSET;
-        let end = start + LEAF_NODE_NEXT_LEAF_SIZE;
-        &mut self.0[start..end]
+    pub fn leaf_node_next_leaf(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut next_leaf_pointer,
+                ..
+            } => next_leaf_pointer,
+            Node::Internal { .. } => panic!("leaf_node_next_leaf: Not a leaf node"),
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let node_type = bytes[0]; // 0 -> Leaf Node, 1 -> Internal Node
+        let is_root = bytes[1] == 1;
+
+        let start = PARENT_POINTER_OFFSET;
+        let end = start + PARENT_POINTER_SIZE;
+        let mut parent_pointer_bytes = [0; PARENT_POINTER_SIZE];
+        parent_pointer_bytes.copy_from_slice(&bytes[start..end]);
+        let parent_pointer = u32::from_le_bytes(parent_pointer_bytes);
+
+        if node_type == 0 {
+            let start = LEAF_NODE_NUM_CELLS_OFFSET;
+            let end = start + LEAF_NODE_NUM_CELLS_SIZE;
+            let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
+            num_cells_bytes.copy_from_slice(&bytes[start..end]);
+            let num_cells = u32::from_le_bytes(num_cells_bytes);
+
+            let start = LEAF_NODE_NEXT_LEAF_OFFSET;
+            let end = start + LEAF_NODE_NEXT_LEAF_SIZE;
+            let mut next_leaf_pointer_bytes = [0; LEAF_NODE_NEXT_LEAF_SIZE];
+            next_leaf_pointer_bytes.copy_from_slice(&bytes[start..end]);
+            let next_leaf_pointer = u32::from_le_bytes(next_leaf_pointer_bytes);
+
+            let mut cells = Vec::new();
+
+            let mut start = LEAF_NODE_HEADER_SIZE;
+            let end = PAGE_SIZE;
+
+            while start < end {
+                let end = start + LEAF_NODE_KEY_SIZE;
+                if end >= PAGE_SIZE {
+                    break;
+                }
+
+                let mut key_bytes = [0; LEAF_NODE_KEY_SIZE];
+                key_bytes.copy_from_slice(&bytes[start..end]);
+                let key = u32::from_le_bytes(key_bytes);
+
+                start = end;
+                let end = start + ROW_SIZE;
+                if end >= PAGE_SIZE {
+                    break;
+                }
+
+                let value = Row::deserialize(&bytes[start..end]);
+                let leaf_node_cell = LeafNodeCell { key, value };
+
+                cells.push(leaf_node_cell);
+                start = end;
+            }
+
+            Node::Leaf {
+                is_root,
+                parent_pointer,
+                num_cells,
+                next_leaf_pointer,
+                cells,
+            }
+        } else {
+            let start = INTERNAL_NODE_NUM_KEYS_OFFSET;
+            let end = start + INTERNAL_NODE_NUM_KEYS_SIZE;
+            let mut num_keys_bytes = [0; INTERNAL_NODE_NUM_KEYS_SIZE];
+            num_keys_bytes.copy_from_slice(&bytes[start..end]);
+            let num_keys = u32::from_le_bytes(num_keys_bytes);
+
+            let start = INTERNAL_NODE_RIGHT_CHILD_OFFSET;
+            let end = start + INTERNAL_NODE_RIGHT_CHILD_SIZE;
+            let mut right_child_pointer_bytes = [0; INTERNAL_NODE_RIGHT_CHILD_SIZE];
+            right_child_pointer_bytes.copy_from_slice(&bytes[start..end]);
+            let right_child_pointer = u32::from_le_bytes(right_child_pointer_bytes);
+
+            let mut cells = Vec::new();
+
+            let mut start = INTERNAL_NODE_HEADER_SIZE;
+            let end = PAGE_SIZE;
+
+            while start < end {
+                let end = start + INTERNAL_NODE_CHILD_SIZE;
+                if end >= PAGE_SIZE {
+                    break;
+                }
+
+                let mut child_pointer_bytes = [0; INTERNAL_NODE_CHILD_SIZE];
+                child_pointer_bytes.copy_from_slice(&bytes[start..end]);
+                let child_pointer = u32::from_le_bytes(child_pointer_bytes);
+
+                start = end;
+                let end = start + INTERNAL_NODE_KEY_SIZE;
+                if end >= PAGE_SIZE {
+                    break;
+                }
+                let mut key_bytes = [0; INTERNAL_NODE_KEY_SIZE];
+                key_bytes.copy_from_slice(&bytes[start..end]);
+                let key = u32::from_le_bytes(key_bytes);
+
+                let internal_node_cell = InternalNodeCell { child_pointer, key };
+
+                cells.push(internal_node_cell);
+                start = end;
+            }
+
+            Node::Internal {
+                is_root,
+                parent_pointer,
+                num_keys,
+                right_child_pointer,
+                cells,
+            }
+        }
+    }
+
+    pub fn to_bytes(&self) -> [u8; PAGE_SIZE] {
+        let mut node = [0; PAGE_SIZE];
+
+        match self {
+            Node::Leaf {
+                is_root,
+                parent_pointer,
+                num_cells,
+                next_leaf_pointer,
+                cells,
+            } => {
+                node[0] = 0;
+                node[1] = if *is_root { 1 } else { 0 };
+
+                let start = PARENT_POINTER_OFFSET;
+                let end = start + PARENT_POINTER_SIZE;
+                node[start..end].copy_from_slice(&parent_pointer.to_le_bytes());
+
+                let start = LEAF_NODE_NUM_CELLS_OFFSET;
+                let end = start + LEAF_NODE_NUM_CELLS_SIZE;
+                node[start..end].copy_from_slice(&num_cells.to_le_bytes());
+
+                let start = LEAF_NODE_NEXT_LEAF_OFFSET;
+                let end = start + LEAF_NODE_NEXT_LEAF_SIZE;
+                node[start..end].copy_from_slice(&next_leaf_pointer.to_le_bytes());
+
+                let mut start = LEAF_NODE_HEADER_SIZE;
+                for cell in cells {
+                    let end = start + LEAF_NODE_KEY_SIZE;
+                    if end >= PAGE_SIZE {
+                        break;
+                    }
+                    node[start..end].copy_from_slice(&cell.key.to_le_bytes());
+
+                    start = end;
+                    let end = start + ROW_SIZE;
+                    if end >= PAGE_SIZE {
+                        break;
+                    }
+
+                    let mut value = [0; ROW_SIZE];
+                    cell.value.serialize(&mut value);
+                    node[start..end].copy_from_slice(&value);
+
+                    start = end;
+                }
+            }
+            Node::Internal {
+                parent_pointer,
+                is_root,
+                num_keys,
+                right_child_pointer,
+                cells,
+            } => {
+                node[0] = 1;
+                node[1] = if *is_root { 1 } else { 0 };
+
+                let start = PARENT_POINTER_OFFSET;
+                let end = start + PARENT_POINTER_SIZE;
+                node[start..end].copy_from_slice(&parent_pointer.to_le_bytes());
+
+                let start = INTERNAL_NODE_NUM_KEYS_OFFSET;
+                let end = start + INTERNAL_NODE_NUM_KEYS_SIZE;
+                node[start..end].copy_from_slice(&num_keys.to_le_bytes());
+
+                let start = INTERNAL_NODE_RIGHT_CHILD_OFFSET;
+                let end = start + INTERNAL_NODE_RIGHT_CHILD_SIZE;
+                node[start..end].copy_from_slice(&right_child_pointer.to_le_bytes());
+
+                let mut start = INTERNAL_NODE_HEADER_SIZE;
+                for cell in cells {
+                    let end = start + INTERNAL_NODE_CHILD_SIZE;
+                    if end >= PAGE_SIZE {
+                        break;
+                    }
+                    node[start..end].copy_from_slice(&cell.child_pointer.to_le_bytes());
+
+                    start = end;
+                    let end = start + INTERNAL_NODE_KEY_SIZE;
+                    if end >= PAGE_SIZE {
+                        break;
+                    }
+                    node[start..end].copy_from_slice(&cell.key.to_le_bytes());
+
+                    start = end;
+                }
+            }
+        }
+        node
     }
 }

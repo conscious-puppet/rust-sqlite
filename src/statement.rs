@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::fmt;
 
 use crate::cursor::Cursor;
-use crate::node::{LEAF_NODE_KEY_SIZE, LEAF_NODE_NUM_CELLS_SIZE};
 use crate::row::Row;
 use crate::table::Table;
 use crate::InputBuffer;
@@ -84,19 +83,16 @@ impl Statement {
     fn execute_select(table: &mut Table) -> Result<(), ExecuteErr> {
         let mut cursor = Cursor::table_start(table);
         while !cursor.end_of_table {
-            let row = Row::deserialize(cursor.value());
-            cursor.advance();
+            let row = cursor.value();
             println!("{}", row);
+            cursor.advance();
         }
         Ok(())
     }
 
     fn execute_insert(row: Row, table: &mut Table) -> Result<(), ExecuteErr> {
         let node = table.pager.get_page(table.root_page_num);
-
-        let mut num_cells_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
-        num_cells_bytes.copy_from_slice(node.leaf_node_num_cells());
-        let num_cells = u32::from_le_bytes(num_cells_bytes);
+        let num_cells = *node.leaf_node_num_cells();
 
         let key_to_insert = row.id;
         let mut cursor = Cursor::table_find(table, key_to_insert);
@@ -104,10 +100,7 @@ impl Statement {
 
         if cell_num < num_cells {
             let node = cursor.table.pager.get_page(cursor.table.root_page_num);
-
-            let mut key_at_index_bytes = [0; LEAF_NODE_KEY_SIZE];
-            key_at_index_bytes.copy_from_slice(node.leaf_node_key(cell_num));
-            let key_at_index = u32::from_le_bytes(key_at_index_bytes);
+            let key_at_index = *node.leaf_node_key(cell_num);
 
             if key_at_index == key_to_insert {
                 return Err(ExecuteErr::DuplicateKey);

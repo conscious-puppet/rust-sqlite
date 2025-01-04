@@ -3,10 +3,7 @@ use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
 
-use crate::node::{
-    Node, NodeType, INTERNAL_NODE_CHILD_SIZE, INTERNAL_NODE_KEY_SIZE, INTERNAL_NODE_NUM_KEYS_SIZE,
-    INTERNAL_NODE_RIGHT_CHILD_SIZE, LEAF_NODE_KEY_SIZE, LEAF_NODE_NUM_CELLS_SIZE,
-};
+use crate::node::Node;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const TABLE_MAX_PAGES: usize = 100;
@@ -86,9 +83,13 @@ impl Pager {
                     .seek(std::io::SeekFrom::Start(offset as u64))
                     .expect("Unable to seek file.");
 
+                let mut buffer = [0; PAGE_SIZE];
+
                 self.file
-                    .read(&mut page.0)
+                    .read(&mut buffer)
                     .expect("Unable to read file to a buffer.");
+
+                *page = Node::from_bytes(&buffer);
             }
 
             if page_num as u32 >= self.num_pages {
@@ -103,6 +104,7 @@ impl Pager {
         Self::validate_page_num(page_num);
 
         // Load page, if not loaded previously
+        // TODO: should not be needed, we could skip flushing these pages
         let _ = self.get_page(page_num);
 
         let offset = page_num as usize * PAGE_SIZE;
@@ -111,7 +113,9 @@ impl Pager {
             .expect("Unable to seek file.");
 
         let page = &self.pages[page_num as usize];
-        self.file.write(&page.0).expect("Unable to write to file.");
+        self.file
+            .write(&page.to_bytes())
+            .expect("Unable to write to file.");
     }
 
     // Until we start recycling free pages, new pages will always
@@ -146,52 +150,37 @@ impl<'a> fmt::Display for PagerProxy<'a> {
         ) -> fmt::Result {
             let node = pager.get_page(page_num);
 
-            match node.get_node_type() {
-                NodeType::Leaf => {
-                    let node = pager.get_page(page_num);
-                    let mut num_keys_bytes = [0; LEAF_NODE_NUM_CELLS_SIZE];
-                    num_keys_bytes.copy_from_slice(node.leaf_node_num_cells());
-                    let num_keys = u32::from_le_bytes(num_keys_bytes);
+            match *node {
+                Node::Leaf { num_cells, .. } => {
                     indent(f, indentation_level)?;
-                    writeln!(f, "- leaf (size {num_keys})")?;
+                    writeln!(f, "- leaf (size {num_cells})")?;
 
-                    for i in 0..num_keys {
+                    for i in 0..num_cells {
                         indent(f, indentation_level + 1)?;
-                        let mut leaf_node_key_bytes = [0; LEAF_NODE_KEY_SIZE];
-                        leaf_node_key_bytes.copy_from_slice(node.leaf_node_key(i));
-                        let leaf_node_key = u32::from_le_bytes(leaf_node_key_bytes);
+                        let leaf_node_key = node.leaf_node_key(i);
                         writeln!(f, "- {leaf_node_key}")?;
                     }
                 }
-                NodeType::Internal => {
-                    let node = pager.get_page(page_num);
-                    let mut num_keys_bytes = [0; INTERNAL_NODE_NUM_KEYS_SIZE];
-                    num_keys_bytes.copy_from_slice(node.internal_node_num_keys());
-                    let num_keys = u32::from_le_bytes(num_keys_bytes);
+                Node::Internal {
+                    num_keys,
+                    right_child_pointer,
+                    ..
+                } => {
                     indent(f, indentation_level)?;
                     writeln!(f, "- internal (size {num_keys})")?;
 
                     for i in 0..num_keys {
                         let node = pager.get_page(page_num);
-                        let mut child_page_num_bytes = [0; INTERNAL_NODE_CHILD_SIZE];
-                        child_page_num_bytes.copy_from_slice(node.internal_node_child(i));
-                        let child_page_num = u32::from_le_bytes(child_page_num_bytes);
-
+                        let child_page_num = *node.internal_node_child(i);
                         print_tree(f, pager, child_page_num, indentation_level + 1)?;
 
                         indent(f, indentation_level + 1)?;
+
                         let node = pager.get_page(page_num);
-                        let mut internal_node_key_bytes = [0; INTERNAL_NODE_KEY_SIZE];
-                        internal_node_key_bytes.copy_from_slice(node.internal_node_key(i));
-                        let internal_node_key = u32::from_le_bytes(internal_node_key_bytes);
+                        let internal_node_key = node.internal_node_key(i);
                         writeln!(f, "- key {}", internal_node_key)?;
                     }
-
-                    let node = pager.get_page(page_num);
-                    let mut child_page_num_bytes = [0; INTERNAL_NODE_RIGHT_CHILD_SIZE];
-                    child_page_num_bytes.copy_from_slice(node.internal_node_right_child());
-                    let child_page_num = u32::from_le_bytes(child_page_num_bytes);
-                    print_tree(f, pager, child_page_num, indentation_level + 1)?;
+                    print_tree(f, pager, right_child_pointer, indentation_level + 1)?;
                 }
             }
 
