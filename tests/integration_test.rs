@@ -149,6 +149,32 @@ fn keeps_data_after_closing_connection() {
 }
 
 #[test]
+fn keeps_data_after_closing_connection2() {
+    let tempfile = TempFile::new();
+
+    let mut input: Vec<_> = (1..=15)
+        .map(|i| format!("insert {i} user{i} person{i}@example.com"))
+        .collect();
+    input.push(".exit".to_owned());
+
+    let output = spawn_rust_sqlite(&tempfile, input);
+    let expected_output = vec!["db > Executed.".to_owned(), "db > ".to_owned()];
+    assert_eq!(output[14..], expected_output);
+
+    let input = vec!["select".to_owned(), ".exit".to_owned()];
+    let output = spawn_rust_sqlite(&tempfile, input);
+
+    let mut expected_output: Vec<_> = (2..=15)
+        .map(|i| format!("({i}, user{i}, person{i}@example.com)"))
+        .collect();
+    expected_output.insert(0, "db > (1, user1, person1@example.com)".to_owned());
+    expected_output.push("Executed.".to_owned());
+    expected_output.push("db > ".to_owned());
+
+    assert_eq!(output, expected_output);
+}
+
+#[test]
 fn prints_constants() {
     let tempfile = TempFile::new();
 
@@ -178,6 +204,7 @@ fn allows_printing_out_the_structure_of_a_one_node_btree() {
     input.push(".btree".to_owned());
     input.push(".exit".to_owned());
     let output = spawn_rust_sqlite(&tempfile, input);
+
     let expected_output = vec![
         "db > Executed.".to_owned(),
         "db > Executed.".to_owned(),
@@ -242,26 +269,13 @@ fn prints_all_rows_in_a_multi_level_tree() {
     input.push(".exit".to_owned());
 
     let output = spawn_rust_sqlite(&tempfile, input);
+    let mut expected_output: Vec<_> = (2..=15)
+        .map(|i| format!("({i}, user{i}, person{i}@example.com)"))
+        .collect();
+    expected_output.insert(0, "db > (1, user1, person1@example.com)".to_owned());
+    expected_output.push("Executed.".to_owned());
+    expected_output.push("db > ".to_owned());
 
-    let expected_output = vec![
-        "db > (1, user1, person1@example.com)".to_owned(),
-        "(2, user2, person2@example.com)".to_owned(),
-        "(3, user3, person3@example.com)".to_owned(),
-        "(4, user4, person4@example.com)".to_owned(),
-        "(5, user5, person5@example.com)".to_owned(),
-        "(6, user6, person6@example.com)".to_owned(),
-        "(7, user7, person7@example.com)".to_owned(),
-        "(8, user8, person8@example.com)".to_owned(),
-        "(9, user9, person9@example.com)".to_owned(),
-        "(10, user10, person10@example.com)".to_owned(),
-        "(11, user11, person11@example.com)".to_owned(),
-        "(12, user12, person12@example.com)".to_owned(),
-        "(13, user13, person13@example.com)".to_owned(),
-        "(14, user14, person14@example.com)".to_owned(),
-        "(15, user15, person15@example.com)".to_owned(),
-        "Executed.".to_owned(),
-        "db > ".to_owned(),
-    ];
     assert_eq!(output[15..], expected_output);
 }
 

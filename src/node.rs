@@ -221,8 +221,8 @@ impl Node {
 
     pub fn get_node_max_key(&mut self) -> u32 {
         match *self {
-            Node::Leaf { num_cells, .. } => *self.leaf_node_key(num_cells),
-            Node::Internal { num_keys, .. } => *self.internal_node_key(num_keys),
+            Node::Leaf { num_cells, .. } => *self.leaf_node_key(num_cells - 1),
+            Node::Internal { num_keys, .. } => *self.internal_node_key(num_keys - 1),
         }
     }
 

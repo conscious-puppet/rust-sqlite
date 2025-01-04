@@ -13,7 +13,7 @@ pub struct Pager {
     file_length: u64,
     // TODO: is this required? can be derived from pages.len()
     pub num_pages: u32,
-    pages: Vec<Node>,
+    pages: Vec<Option<Box<Node>>>,
 }
 
 impl Pager {
@@ -38,7 +38,11 @@ impl Pager {
             panic!("Db file is not a whole number of pages. Corrupt file.")
         }
 
-        let pages = Vec::new();
+        let mut pages = Vec::new();
+
+        for _ in 0..TABLE_MAX_PAGES {
+            pages.push(None);
+        }
 
         Self {
             file,
@@ -65,10 +69,8 @@ impl Pager {
         Self::validate_page_num(page_num);
 
         // Cache miss. Allocate memory and load from file.
-        if self.pages.get(page_num as usize).is_none() {
-            self.pages.push(Node::initialize_leaf_node());
-
-            let page = &mut self.pages[page_num as usize];
+        if self.pages[page_num as usize].is_none() {
+            let mut page = Node::initialize_leaf_node();
 
             let mut num_pages = self.file_length / PAGE_SIZE as u64;
 
@@ -89,33 +91,35 @@ impl Pager {
                     .read(&mut buffer)
                     .expect("Unable to read file to a buffer.");
 
-                *page = Node::from_bytes(&buffer);
+                page = Node::from_bytes(&buffer);
             }
 
             if page_num as u32 >= self.num_pages {
                 self.num_pages = page_num + 1;
             }
+            self.pages[page_num as usize] = Some(Box::new(page));
         }
 
-        &mut self.pages[page_num as usize]
+        self.pages[page_num as usize]
+            .as_mut()
+            .expect("Node is already initialized. This should not happen")
     }
 
     pub fn pager_flush(&mut self, page_num: u32) {
         Self::validate_page_num(page_num);
 
-        // Load page, if not loaded previously
-        // TODO: should not be needed, we could skip flushing these pages
-        let _ = self.get_page(page_num);
+        self.pages[page_num as usize]
+            .as_ref()
+            .expect("Tried to flush a null page.");
+
+        let page = self.get_page(page_num).to_bytes();
 
         let offset = page_num as usize * PAGE_SIZE;
         self.file
             .seek(std::io::SeekFrom::Start(offset as u64))
             .expect("Unable to seek file.");
 
-        let page = &self.pages[page_num as usize];
-        self.file
-            .write(&page.to_bytes())
-            .expect("Unable to write to file.");
+        self.file.write(&page).expect("Unable to write to file.");
     }
 
     // Until we start recycling free pages, new pages will always

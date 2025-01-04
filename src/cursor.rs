@@ -96,8 +96,6 @@ impl<'a> Cursor<'a> {
         }
 
         let child_num = *node.internal_node_child(min_index);
-
-        println!("child_num: {child_num}");
         let child = table.pager.get_page(child_num);
 
         match child {
