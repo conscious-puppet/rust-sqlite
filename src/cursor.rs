@@ -78,24 +78,9 @@ impl<'a> Cursor<'a> {
 
     fn internal_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
         let node = table.pager.get_page(page_num);
-        let num_keys = node.internal_node_num_keys();
 
-        // Binary search to find index of child to search
-        let mut min_index = 0;
-        let mut max_index = *num_keys; // there is one more child than key
-
-        while min_index != max_index {
-            let index = (min_index + max_index) / 2;
-            let key_to_right = node.internal_node_key(index);
-
-            if *key_to_right >= key {
-                max_index = index;
-            } else {
-                min_index = index + 1;
-            }
-        }
-
-        let child_num = *node.internal_node_child(min_index);
+        let child_index = node.internal_node_find_child(key);
+        let child_num = *node.internal_node_child(child_index);
         let child = table.pager.get_page(child_num);
 
         match child {
@@ -160,11 +145,14 @@ impl<'a> Cursor<'a> {
         let new_page_num = self.table.pager.get_unused_page_num();
 
         let old_node = self.table.pager.get_page(self.page_num);
+        let old_max = old_node.get_node_max_key();
         let next_node = *old_node.leaf_node_next_leaf();
+        let old_node_parent = *old_node.parent();
         *old_node.leaf_node_next_leaf() = new_page_num;
 
         let new_node = self.table.pager.get_page(new_page_num);
         *new_node.leaf_node_next_leaf() = next_node;
+        *new_node.parent() = old_node_parent;
 
         // All existing keys plus new key should be divided
         // evenly between old (left) and new (right) nodes.
@@ -217,7 +205,12 @@ impl<'a> Cursor<'a> {
         if old_node.is_node_root() {
             self.table.create_new_root(new_page_num);
         } else {
-            todo!("Need to implement updating parent after split.")
+            let parent_page_num = *old_node.parent();
+            let new_max = old_node.get_node_max_key();
+            let parent = self.table.pager.get_page(parent_page_num);
+            parent.update_internal_node_key(old_max, new_max);
+            self.table
+                .internal_node_insert(parent_page_num, new_page_num);
         }
     }
 }

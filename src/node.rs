@@ -46,56 +46,58 @@ pub const INTERNAL_NODE_HEADER_SIZE: usize =
 pub const INTERNAL_NODE_KEY_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CHILD_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CELL_SIZE: usize = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE;
+pub const INTERNAL_NODE_MAX_CELLS: usize = 3; // Kept small for testing
 
-/// Leaf Node Format
-/// |-------------+----------------+----------------+-----------+--------------------|
-/// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13        |
-/// | node_type   | is_root        | parent_pointer | num_cells | next_leaf_pointer  |
-/// |-------------+----------------+----------------+-----------+--------------------|
-/// | bytes 14-17                  | bytes 18-308                                    |
-/// | key 0                        | value 0                                         |
-/// |------------------------------+-------------------------------------------------|
-/// | bytes 309-312                | bytes 313-603                                   |
-/// | key 1                        | value 1                                         |
-/// |------------------------------+-------------------------------------------------|
-/// |             ...              |          ...                                    |
-/// |------------------------------+-------------------------------------------------|
-/// | bytes 3554-3557              | bytes 3558-3848                                 |
-/// | key 12                       | value 12                                        |
-/// |------------------------------+-------------------------------------------------|
-/// |                                 bytes 3849-4095                                |
-/// |                                  wasted space                                  |
-/// |--------------------------------------------------------------------------------|
-///
-///
-/// Internal Node Format
-/// |-----------+---------+----------------+-----------+---------------------|
-/// | byte 0    | byte 1  | bytes 2-5      | bytes 6-9 | bytes 10-13         |
-/// | node_type | is_root | parent_pointer | num_keys  | right_child_pointer |
-/// |-----------+---------+----------------+-----------+---------------------|
-/// | bytes 14-17                         | bytes 18-21                      |
-/// | child pointer 0                     | key 0                            |
-/// |-------------------------------------+----------------------------------|
-/// | bytes 22-25                         | bytes 26-29                      |
-/// | child pointer 1                     | key 1                            |
-/// |-------------------------------------+----------------------------------|
-/// |                 ...                 |             ...                  |
-/// |-------------------------------------+----------------------------------|
-/// | bytes 4086-4089                     | bytes 4090-4093                  |
-/// | child pointer 509                   | key 509                          |
-/// |-------------------------------------+----------------------------------|
-/// |                              bytes 4094-4095                           |
-/// |                                wasted space                            |
-/// |------------------------------------------------------------------------|
-///
-/// |------------------------+-----------------------+------------------------|
-/// | # internal node layers | max # leaf nodes      | Size of all leaf nodes |
-/// |------------------------+-----------------------+------------------------|
-/// | 0                      | 511 ^ 0 = 1           | 4 KB                   |
-/// | 1                      | 511 ^ 1 = 511         | ~2 MB                  |
-/// | 2                      | 511 ^ 2 = 261,121     | ~1 GB                  |
-/// | 3                      | 511 ^ 3 = 133,432,831 | ~550 GB                |
-/// |------------------------+-----------------------+------------------------|
+// Leaf Node Format
+// |-------------+----------------+----------------+-----------+--------------------|
+// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13        |
+// | node_type   | is_root        | parent_pointer | num_cells | next_leaf_pointer  |
+// |-------------+----------------+----------------+-----------+--------------------|
+// | bytes 14-17                  | bytes 18-308                                    |
+// | key 0                        | value 0                                         |
+// |------------------------------+-------------------------------------------------|
+// | bytes 309-312                | bytes 313-603                                   |
+// | key 1                        | value 1                                         |
+// |------------------------------+-------------------------------------------------|
+// |             ...              |          ...                                    |
+// |------------------------------+-------------------------------------------------|
+// | bytes 3554-3557              | bytes 3558-3848                                 |
+// | key 12                       | value 12                                        |
+// |------------------------------+-------------------------------------------------|
+// |                                 bytes 3849-4095                                |
+// |                                  wasted space                                  |
+// |--------------------------------------------------------------------------------|
+//
+//
+// Internal Node Format
+// |-----------+---------+----------------+-----------+---------------------|
+// | byte 0    | byte 1  | bytes 2-5      | bytes 6-9 | bytes 10-13         |
+// | node_type | is_root | parent_pointer | num_keys  | right_child_pointer |
+// |-----------+---------+----------------+-----------+---------------------|
+// | bytes 14-17                         | bytes 18-21                      |
+// | child pointer 0                     | key 0                            |
+// |-------------------------------------+----------------------------------|
+// | bytes 22-25                         | bytes 26-29                      |
+// | child pointer 1                     | key 1                            |
+// |-------------------------------------+----------------------------------|
+// |                 ...                 |             ...                  |
+// |-------------------------------------+----------------------------------|
+// | bytes 4086-4089                     | bytes 4090-4093                  |
+// | child pointer 509                   | key 509                          |
+// |-------------------------------------+----------------------------------|
+// |                              bytes 4094-4095                           |
+// |                                wasted space                            |
+// |------------------------------------------------------------------------|
+//
+// |------------------------+-----------------------+------------------------|
+// | # internal node layers | max # leaf nodes      | Size of all leaf nodes |
+// |------------------------+-----------------------+------------------------|
+// | 0                      | 511 ^ 0 = 1           | 4 KB                   |
+// | 1                      | 511 ^ 1 = 511         | ~2 MB                  |
+// | 2                      | 511 ^ 2 = 261,121     | ~1 GB                  |
+// | 3                      | 511 ^ 3 = 133,432,831 | ~550 GB                |
+// |------------------------+-----------------------+------------------------|
+
 pub enum Node {
     Leaf {
         is_root: bool,
@@ -159,7 +161,7 @@ impl Node {
 
     pub fn initialize_internal_node() -> Self {
         let mut cells = Vec::new();
-        for _ in 0..LEAF_NODE_MAX_CELLS {
+        for _ in 0..INTERNAL_NODE_MAX_CELLS {
             cells.push(InternalNodeCell::new())
         }
         Node::Internal {
@@ -176,9 +178,7 @@ impl Node {
             Node::Leaf {
                 ref mut num_cells, ..
             } => num_cells,
-            Node::Internal {
-                ref mut num_keys, ..
-            } => num_keys,
+            Node::Internal { .. } => panic!("leaf_node_num_cells: Not a leaf node"),
         }
     }
 
@@ -286,6 +286,65 @@ impl Node {
             } => next_leaf_pointer,
             Node::Internal { .. } => panic!("leaf_node_next_leaf: Not a leaf node"),
         }
+    }
+
+    pub fn num_cell_or_keys(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut num_cells, ..
+            } => num_cells,
+            Node::Internal {
+                ref mut num_keys, ..
+            } => num_keys,
+        }
+    }
+
+    pub fn node_key(&mut self, cell_num: u32) -> &mut u32 {
+        match *self {
+            Node::Leaf { .. } => self.leaf_node_key(cell_num),
+            Node::Internal { .. } => self.internal_node_key(cell_num),
+        }
+    }
+
+    pub fn parent(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut parent_pointer,
+                ..
+            } => parent_pointer,
+            Node::Internal {
+                ref mut parent_pointer,
+                ..
+            } => parent_pointer,
+        }
+    }
+
+    pub fn update_internal_node_key(&mut self, old_key: u32, new_key: u32) {
+        let old_child_index = self.internal_node_find_child(old_key);
+        *self.internal_node_key(old_child_index) = new_key;
+    }
+
+    // Return the index of the child which should contain
+    // the given key.
+    pub fn internal_node_find_child(&mut self, key: u32) -> u32 {
+        let num_keys = self.internal_node_num_keys();
+
+        // Binary search
+        let mut min_index = 0;
+        let mut max_index = *num_keys; // there is one more child than key
+
+        while min_index != max_index {
+            let index = (min_index + max_index) / 2;
+            let key_to_right = self.internal_node_key(index);
+
+            if *key_to_right >= key {
+                max_index = index;
+            } else {
+                min_index = index + 1;
+            }
+        }
+
+        min_index
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {

@@ -1,4 +1,7 @@
-use crate::{node::Node, pager::Pager};
+use crate::{
+    node::{InternalNodeCell, Node, INTERNAL_NODE_MAX_CELLS},
+    pager::Pager,
+};
 
 pub struct Table {
     pub root_page_num: u32,
@@ -44,7 +47,6 @@ impl Table {
         let root = self.pager.get_page(self.root_page_num);
         let new_left_child = std::mem::replace(root, Node::initialize_internal_node());
 
-        let _right_child = self.pager.get_page(right_child_page_num);
         let left_child_page_num = self.pager.get_unused_page_num();
         let left_child = self.pager.get_page(left_child_page_num);
 
@@ -60,5 +62,51 @@ impl Table {
         *root.internal_node_child(0) = left_child_page_num;
         *root.internal_node_key(0) = left_child_max_key;
         *root.internal_node_right_child() = right_child_page_num;
+
+        let left_child = self.pager.get_page(left_child_page_num);
+        *left_child.parent() = self.root_page_num;
+
+        let right_child = self.pager.get_page(right_child_page_num);
+        *right_child.parent() = self.root_page_num;
+    }
+
+    // Add a new child/key pair to parent that corresponds to child
+    pub fn internal_node_insert(&mut self, parent_page_num: u32, child_page_num: u32) {
+        let child = self.pager.get_page(child_page_num);
+        let child_max_key = child.get_node_max_key();
+
+        let parent = self.pager.get_page(parent_page_num);
+        let index = parent.internal_node_find_child(child_max_key);
+        let original_num_keys = *parent.internal_node_num_keys();
+        *parent.internal_node_num_keys() = original_num_keys + 1;
+
+        if original_num_keys as usize >= INTERNAL_NODE_MAX_CELLS {
+            panic!("Need to implement splitting internal node");
+        }
+
+        let right_child_page_num = *parent.internal_node_right_child();
+        let right_child = self.pager.get_page(right_child_page_num);
+        let right_child_node_max_key = right_child.get_node_max_key();
+
+        if child_max_key > right_child_node_max_key {
+            // Replace right child
+            let parent = self.pager.get_page(parent_page_num);
+            *parent.internal_node_child(original_num_keys) = right_child_page_num;
+            *parent.internal_node_key(original_num_keys) = right_child_node_max_key;
+            *parent.internal_node_right_child() = child_page_num;
+        } else {
+            // Make room for the new cell
+            let parent = self.pager.get_page(parent_page_num);
+            let mut i = original_num_keys;
+            while i > index {
+                let source =
+                    std::mem::replace(parent.internal_node_cell(i - 1), InternalNodeCell::new());
+                let destination = parent.internal_node_cell(i);
+                *destination = source;
+                i -= 1;
+            }
+            *parent.internal_node_child(index) = child_page_num;
+            *parent.internal_node_key(index) = child_max_key;
+        }
     }
 }

@@ -300,6 +300,92 @@ fn prints_an_error_message_if_there_is_a_duplicate_id() {
     assert_eq!(output, expected_output);
 }
 
+#[test]
+fn allows_printing_out_the_structure_of_a_4_leaf_node_btree() {
+    let tempfile = TempFile::new();
+
+    let input = vec![
+        "insert 18 user18 person18@example.com".to_owned(),
+        "insert 7 user7 person7@example.com".to_owned(),
+        "insert 10 user10 person10@example.com".to_owned(),
+        "insert 29 user29 person29@example.com".to_owned(),
+        "insert 23 user23 person23@example.com".to_owned(),
+        "insert 4 user4 person4@example.com".to_owned(),
+        "insert 14 user14 person14@example.com".to_owned(),
+        "insert 30 user30 person30@example.com".to_owned(),
+        "insert 15 user15 person15@example.com".to_owned(),
+        "insert 26 user26 person26@example.com".to_owned(),
+        "insert 22 user22 person22@example.com".to_owned(),
+        "insert 19 user19 person19@example.com".to_owned(),
+        "insert 2 user2 person2@example.com".to_owned(),
+        "insert 1 user1 person1@example.com".to_owned(),
+        "insert 21 user21 person21@example.com".to_owned(),
+        "insert 11 user11 person11@example.com".to_owned(),
+        "insert 6 user6 person6@example.com".to_owned(),
+        "insert 20 user20 person20@example.com".to_owned(),
+        "insert 5 user5 person5@example.com".to_owned(),
+        "insert 8 user8 person8@example.com".to_owned(),
+        "insert 9 user9 person9@example.com".to_owned(),
+        "insert 3 user3 person3@example.com".to_owned(),
+        "insert 12 user12 person12@example.com".to_owned(),
+        "insert 27 user27 person27@example.com".to_owned(),
+        "insert 17 user17 person17@example.com".to_owned(),
+        "insert 16 user16 person16@example.com".to_owned(),
+        "insert 13 user13 person13@example.com".to_owned(),
+        "insert 24 user24 person24@example.com".to_owned(),
+        "insert 25 user25 person25@example.com".to_owned(),
+        "insert 28 user28 person28@example.com".to_owned(),
+        ".btree".to_owned(),
+        ".exit".to_owned(),
+    ];
+
+    let output = spawn_rust_sqlite(&tempfile, input);
+
+    let expected_output = vec![
+        "db > Tree:".to_owned(),
+        "- internal (size 3)".to_owned(),
+        " - leaf (size 7)".to_owned(),
+        "  - 1".to_owned(),
+        "  - 2".to_owned(),
+        "  - 3".to_owned(),
+        "  - 4".to_owned(),
+        "  - 5".to_owned(),
+        "  - 6".to_owned(),
+        "  - 7".to_owned(),
+        " - key 7".to_owned(),
+        " - leaf (size 8)".to_owned(),
+        "  - 8".to_owned(),
+        "  - 9".to_owned(),
+        "  - 10".to_owned(),
+        "  - 11".to_owned(),
+        "  - 12".to_owned(),
+        "  - 13".to_owned(),
+        "  - 14".to_owned(),
+        "  - 15".to_owned(),
+        " - key 15".to_owned(),
+        " - leaf (size 7)".to_owned(),
+        "  - 16".to_owned(),
+        "  - 17".to_owned(),
+        "  - 18".to_owned(),
+        "  - 19".to_owned(),
+        "  - 20".to_owned(),
+        "  - 21".to_owned(),
+        "  - 22".to_owned(),
+        " - key 22".to_owned(),
+        " - leaf (size 8)".to_owned(),
+        "  - 23".to_owned(),
+        "  - 24".to_owned(),
+        "  - 25".to_owned(),
+        "  - 26".to_owned(),
+        "  - 27".to_owned(),
+        "  - 28".to_owned(),
+        "  - 29".to_owned(),
+        "  - 30".to_owned(),
+        "db > ".to_owned(),
+    ];
+    assert_eq!(output[30..], expected_output);
+}
+
 fn spawn_rust_sqlite(tempfile: &TempFile, input: Vec<String>) -> Vec<String> {
     let mut process = rust_sqlite_exe()
         .arg(&tempfile.filepath)

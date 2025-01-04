@@ -92,7 +92,7 @@ impl Statement {
 
     fn execute_insert(row: Row, table: &mut Table) -> Result<(), ExecuteErr> {
         let node = table.pager.get_page(table.root_page_num);
-        let num_cells = *node.leaf_node_num_cells();
+        let num_cells = *node.num_cell_or_keys();
 
         let key_to_insert = row.id;
         let mut cursor = Cursor::table_find(table, key_to_insert);
@@ -100,7 +100,7 @@ impl Statement {
 
         if cell_num < num_cells {
             let node = cursor.table.pager.get_page(cursor.table.root_page_num);
-            let key_at_index = *node.leaf_node_key(cell_num);
+            let key_at_index = *node.node_key(cell_num);
 
             if key_at_index == key_to_insert {
                 return Err(ExecuteErr::DuplicateKey);
