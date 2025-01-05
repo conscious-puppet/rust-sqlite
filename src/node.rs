@@ -1,5 +1,5 @@
 use crate::{
-    pager::PAGE_SIZE,
+    pager::{INVALID_PAGE_NUM, PAGE_SIZE},
     row::{Row, ROW_SIZE},
 };
 
@@ -164,11 +164,16 @@ impl Node {
         for _ in 0..INTERNAL_NODE_MAX_CELLS {
             cells.push(InternalNodeCell::new())
         }
+
+        // Necessary because the root page number is 0; by not initializing an internal
+        // node's right child to an invalid page number when initializing the node, we may
+        // end up with 0 as the node's right child, which makes the node a parent of the root
+        let right_child_pointer = INVALID_PAGE_NUM;
         Node::Internal {
             is_root: false,
             parent_pointer: 0,
             num_keys: 0,
-            right_child_pointer: 0,
+            right_child_pointer,
             cells,
         }
     }
@@ -219,13 +224,6 @@ impl Node {
         *is_root_curr = is_root;
     }
 
-    pub fn get_node_max_key(&mut self) -> u32 {
-        match *self {
-            Node::Leaf { num_cells, .. } => *self.leaf_node_key(num_cells - 1),
-            Node::Internal { num_keys, .. } => *self.internal_node_key(num_keys - 1),
-        }
-    }
-
     pub fn internal_node_num_keys(&mut self) -> &mut u32 {
         match *self {
             Node::Leaf { .. } => {
@@ -267,9 +265,22 @@ impl Node {
                 child_num, num_keys
             );
         } else if child_num == *num_keys {
-            self.internal_node_right_child()
+            let right_child = self.internal_node_right_child();
+
+            if *right_child == INVALID_PAGE_NUM {
+                panic!("Tried to access right child of node, but was invalid page");
+            }
+
+            right_child
         } else {
-            &mut self.internal_node_cell(child_num).child_pointer
+            let child = &mut self.internal_node_cell(child_num).child_pointer;
+            if *child == INVALID_PAGE_NUM {
+                panic!(
+                    "Tried to access child {} of node, but was invalid page",
+                    child_num
+                );
+            }
+            child
         }
     }
 

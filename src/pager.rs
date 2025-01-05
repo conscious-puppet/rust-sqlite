@@ -7,6 +7,7 @@ use crate::node::Node;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const TABLE_MAX_PAGES: usize = 100;
+pub const INVALID_PAGE_NUM: u32 = u32::MAX;
 
 pub struct Pager {
     file: File,
@@ -127,6 +128,21 @@ impl Pager {
     pub fn get_unused_page_num(&self) -> u32 {
         self.num_pages
     }
+
+    pub fn get_node_max_key(&mut self, page_num: u32) -> u32 {
+        let mut node = self.pages[page_num as usize]
+            .take()
+            .expect("The node should be initialized.");
+        let max_key = match *node {
+            Node::Leaf { num_cells, .. } => *node.leaf_node_key(num_cells - 1),
+            Node::Internal {
+                ref right_child_pointer,
+                ..
+            } => self.get_node_max_key(*right_child_pointer),
+        };
+        let _ = self.pages[page_num as usize].insert(node);
+        max_key
+    }
 }
 
 pub struct PagerProxy<'a>(RefCell<&'a mut Pager>);
@@ -173,18 +189,20 @@ impl<'a> fmt::Display for PagerProxy<'a> {
                     indent(f, indentation_level)?;
                     writeln!(f, "- internal (size {num_keys})")?;
 
-                    for i in 0..num_keys {
-                        let node = pager.get_page(page_num);
-                        let child_page_num = *node.internal_node_child(i);
-                        print_tree(f, pager, child_page_num, indentation_level + 1)?;
+                    if num_keys > 0 {
+                        for i in 0..num_keys {
+                            let node = pager.get_page(page_num);
+                            let child_page_num = *node.internal_node_child(i);
+                            print_tree(f, pager, child_page_num, indentation_level + 1)?;
 
-                        indent(f, indentation_level + 1)?;
+                            indent(f, indentation_level + 1)?;
 
-                        let node = pager.get_page(page_num);
-                        let internal_node_key = node.internal_node_key(i);
-                        writeln!(f, "- key {}", internal_node_key)?;
+                            let node = pager.get_page(page_num);
+                            let internal_node_key = node.internal_node_key(i);
+                            writeln!(f, "- key {}", internal_node_key)?;
+                        }
+                        print_tree(f, pager, right_child_pointer, indentation_level + 1)?;
                     }
-                    print_tree(f, pager, right_child_pointer, indentation_level + 1)?;
                 }
             }
 
