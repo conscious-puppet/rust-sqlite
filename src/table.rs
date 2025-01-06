@@ -34,7 +34,7 @@ impl Table {
 
     fn db_close(&mut self) {
         for i in 0..self.pager.num_pages {
-            if self.pager.pages.get(i as usize).is_none() {
+            if self.pager.pages[i as usize].is_none() {
                 continue;
             }
             self.pager.pager_flush(i);
@@ -102,7 +102,6 @@ impl Table {
         *left_child.parent() = self.root_page_num;
 
         let right_child = self.pager.get_page(right_child_page_num);
-        *right_child = Node::initialize_internal_node();
         *right_child.parent() = self.root_page_num;
     }
 

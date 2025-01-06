@@ -89,11 +89,12 @@ impl Pager {
                     .expect("Unable to read file to a buffer.");
 
                 page = Node::from_bytes(&buffer);
-
-                if page_num as u32 >= self.num_pages {
-                    self.num_pages = page_num + 1;
-                }
             }
+
+            if page_num as u32 >= self.num_pages {
+                self.num_pages = page_num + 1;
+            }
+
             self.pages[page_num as usize] = Some(Box::new(page));
         }
 
