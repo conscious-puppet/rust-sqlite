@@ -188,6 +188,7 @@ fn prints_constants() {
         "LEAF_NODE_CELL_SIZE: 295".to_owned(),
         "LEAF_NODE_SPACE_FOR_CELLS: 4082".to_owned(),
         "LEAF_NODE_MAX_CELLS: 13".to_owned(),
+        "INTERNAL_NODE_MAX_CELLS: 3".to_owned(),
         "db > ".to_owned(),
     ];
     assert_eq!(output, expected_output);

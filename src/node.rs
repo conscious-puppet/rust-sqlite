@@ -46,7 +46,11 @@ pub const INTERNAL_NODE_HEADER_SIZE: usize =
 pub const INTERNAL_NODE_KEY_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CHILD_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CELL_SIZE: usize = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE;
+pub const INTERNAL_NODE_SPACE_FOR_CELLS: usize = PAGE_SIZE - INTERNAL_NODE_HEADER_SIZE;
+#[cfg(debug_assertions)]
 pub const INTERNAL_NODE_MAX_CELLS: usize = 3; // Kept small for testing
+#[cfg(not(debug_assertions))]
+pub const INTERNAL_NODE_MAX_CELLS: usize = LEAF_NODE_SPACE_FOR_CELLS / INTERNAL_NODE_CELL_SIZE;
 
 // Leaf Node Format
 // |-------------+----------------+----------------+-----------+--------------------|
