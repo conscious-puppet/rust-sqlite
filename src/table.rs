@@ -22,6 +22,7 @@ impl Table {
         if pager.num_pages == 0 {
             // New database file. Initialize page 0 as leaf node.
             let root_node = pager.get_page(0);
+            *root_node = Node::initialize_leaf_node();
             root_node.set_node_root(true);
         }
 
@@ -33,19 +34,31 @@ impl Table {
 
     fn db_close(&mut self) {
         for i in 0..self.pager.num_pages {
+            if self.pager.pages.get(i as usize).is_none() {
+                continue;
+            }
             self.pager.pager_flush(i);
         }
     }
 
+    /// Handle splitting the root.
+    /// Old root copied to new page, becomes left child.
+    /// Address of right child passed in.
+    /// Re-initialize root page to contain the new root node.
+    /// New root node points to two children.
     pub fn create_new_root(&mut self, right_child_page_num: u32) {
-        // Handle splitting the root.
-        // Old root copied to new page, becomes left child.
-        // Address of right child passed in.
-        // Re-initialize root page to contain the new root node.
-        // New root node points to two children.
-
         let root = self.pager.get_page(self.root_page_num);
+        let is_root_internal = match root {
+            Node::Leaf { .. } => false,
+            Node::Internal { .. } => true,
+        };
+
         let new_left_child = std::mem::replace(root, Node::initialize_internal_node());
+        let right_child = self.pager.get_page(right_child_page_num);
+
+        if is_root_internal {
+            *right_child = Node::initialize_internal_node();
+        }
 
         let left_child_page_num = self.pager.get_unused_page_num();
         let left_child = self.pager.get_page(left_child_page_num);
@@ -60,10 +73,17 @@ impl Table {
             ..
         } = *left_child
         {
+            let mut internal_node_page_num = Vec::new();
             for i in 0..num_keys {
+                let internal_node_child = *left_child.internal_node_child(i);
+                internal_node_page_num.push(internal_node_child);
+            }
+
+            for i in internal_node_page_num {
                 let child = self.pager.get_page(i);
                 *child.parent() = left_child_page_num;
             }
+
             let child = self.pager.get_page(right_child_pointer);
             *child.parent() = left_child_page_num;
         }
@@ -71,6 +91,7 @@ impl Table {
         // Root node is a new internal node with one key and two children
         let left_child_max_key = self.pager.get_node_max_key(left_child_page_num);
         let root = self.pager.get_page(self.root_page_num);
+        *root = Node::initialize_internal_node();
         root.set_node_root(true);
         *root.internal_node_num_keys() = 1;
         *root.internal_node_child(0) = left_child_page_num;
@@ -119,15 +140,16 @@ impl Table {
         }
 
         let old_node = self.pager.get_page(old_page_num);
-
         let cur_page_num = *old_node.internal_node_right_child();
+        let node_parent = *old_node.parent();
 
         // First put right child into new node and set right child of old node to invalid page number
         self.internal_node_insert(new_page_num, cur_page_num);
-        let old_node = self.pager.get_page(old_page_num);
-        *old_node.internal_node_right_child() = INVALID_PAGE_NUM;
         let cur = self.pager.get_page(cur_page_num);
         *cur.parent() = new_page_num;
+
+        let old_node = self.pager.get_page(old_page_num);
+        *old_node.internal_node_right_child() = INVALID_PAGE_NUM;
 
         // For each key until you get to the middle key, move the key and the child to the new node
 
@@ -171,8 +193,6 @@ impl Table {
         let parent = if splitting_root {
             self.pager.get_page(self.root_page_num)
         } else {
-            let old_node = self.pager.get_page(old_page_num);
-            let node_parent = *old_node.parent();
             self.pager.get_page(node_parent)
         };
         parent.update_internal_node_key(old_max, old_node_max_key);

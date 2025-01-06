@@ -18,15 +18,18 @@ impl<'a> Cursor<'a> {
     pub fn table_start(table: &'a mut Table) -> Self {
         let cursor = Cursor::table_find(table, 0);
 
+        let cell_num = cursor.cell_num;
         let page_num = cursor.page_num;
         let node = table.pager.get_page(page_num);
         let num_cells = *node.leaf_node_num_cells();
         let end_of_table = num_cells == 0;
 
-        let mut cursor = Cursor::table_find(table, 0);
-        cursor.end_of_table = end_of_table;
-
-        cursor
+        Self {
+            table,
+            page_num,
+            cell_num,
+            end_of_table,
+        }
     }
 
     /// Return the position of the given key.
@@ -44,7 +47,6 @@ impl<'a> Cursor<'a> {
 
     fn leaf_node_find(table: &'a mut Table, page_num: u32, key: u32) -> Self {
         let node = table.pager.get_page(page_num);
-
         let num_cells = node.leaf_node_num_cells();
 
         // Binary search
@@ -151,6 +153,7 @@ impl<'a> Cursor<'a> {
         *old_node.leaf_node_next_leaf() = new_page_num;
 
         let new_node = self.table.pager.get_page(new_page_num);
+        *new_node = Node::initialize_leaf_node();
         *new_node.leaf_node_next_leaf() = next_node;
         *new_node.parent() = old_node_parent;
 

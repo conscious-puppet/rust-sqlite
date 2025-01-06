@@ -182,32 +182,6 @@ impl Node {
         }
     }
 
-    pub fn leaf_node_num_cells(&mut self) -> &mut u32 {
-        match *self {
-            Node::Leaf {
-                ref mut num_cells, ..
-            } => num_cells,
-            Node::Internal { .. } => panic!("leaf_node_num_cells: Not a leaf node"),
-        }
-    }
-
-    pub fn leaf_node_cell(&mut self, cell_num: u32) -> &mut LeafNodeCell {
-        match *self {
-            Node::Leaf { ref mut cells, .. } => &mut cells[cell_num as usize],
-            Node::Internal { .. } => panic!("leaf_node_cell: Not a leaf node"),
-        }
-    }
-
-    pub fn leaf_node_key(&mut self, cell_num: u32) -> &mut u32 {
-        let leaf_node_cell = self.leaf_node_cell(cell_num);
-        &mut leaf_node_cell.key
-    }
-
-    pub fn leaf_node_value(&mut self, cell_num: u32) -> &mut Row {
-        let leaf_node_cell = self.leaf_node_cell(cell_num);
-        &mut leaf_node_cell.value
-    }
-
     pub fn is_node_root(&self) -> bool {
         match *self {
             Node::Leaf { is_root, .. } => is_root,
@@ -226,6 +200,19 @@ impl Node {
         };
 
         *is_root_curr = is_root;
+    }
+
+    pub fn parent(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut parent_pointer,
+                ..
+            } => parent_pointer,
+            Node::Internal {
+                ref mut parent_pointer,
+                ..
+            } => parent_pointer,
+        }
     }
 
     pub fn internal_node_num_keys(&mut self) -> &mut u32 {
@@ -251,12 +238,12 @@ impl Node {
         }
     }
 
-    pub fn internal_node_cell(&mut self, key_num: u32) -> &mut InternalNodeCell {
+    pub fn internal_node_cell(&mut self, cell_num: u32) -> &mut InternalNodeCell {
         match *self {
             Node::Leaf { .. } => {
                 panic!("internal_node_right_child: Not an internal node")
             }
-            Node::Internal { ref mut cells, .. } => &mut cells[key_num as usize],
+            Node::Internal { ref mut cells, .. } => &mut cells[cell_num as usize],
         }
     }
 
@@ -293,6 +280,15 @@ impl Node {
         &mut internal_node_cell.key
     }
 
+    pub fn leaf_node_num_cells(&mut self) -> &mut u32 {
+        match *self {
+            Node::Leaf {
+                ref mut num_cells, ..
+            } => num_cells,
+            Node::Internal { .. } => panic!("leaf_node_num_cells: Not a leaf node"),
+        }
+    }
+
     pub fn leaf_node_next_leaf(&mut self) -> &mut u32 {
         match *self {
             Node::Leaf {
@@ -301,6 +297,23 @@ impl Node {
             } => next_leaf_pointer,
             Node::Internal { .. } => panic!("leaf_node_next_leaf: Not a leaf node"),
         }
+    }
+
+    pub fn leaf_node_cell(&mut self, cell_num: u32) -> &mut LeafNodeCell {
+        match *self {
+            Node::Leaf { ref mut cells, .. } => &mut cells[cell_num as usize],
+            Node::Internal { .. } => panic!("leaf_node_cell: Not a leaf node"),
+        }
+    }
+
+    pub fn leaf_node_key(&mut self, cell_num: u32) -> &mut u32 {
+        let leaf_node_cell = self.leaf_node_cell(cell_num);
+        &mut leaf_node_cell.key
+    }
+
+    pub fn leaf_node_value(&mut self, cell_num: u32) -> &mut Row {
+        let leaf_node_cell = self.leaf_node_cell(cell_num);
+        &mut leaf_node_cell.value
     }
 
     pub fn num_cell_or_keys(&mut self) -> &mut u32 {
@@ -318,19 +331,6 @@ impl Node {
         match *self {
             Node::Leaf { .. } => self.leaf_node_key(cell_num),
             Node::Internal { .. } => self.internal_node_key(cell_num),
-        }
-    }
-
-    pub fn parent(&mut self) -> &mut u32 {
-        match *self {
-            Node::Leaf {
-                ref mut parent_pointer,
-                ..
-            } => parent_pointer,
-            Node::Internal {
-                ref mut parent_pointer,
-                ..
-            } => parent_pointer,
         }
     }
 

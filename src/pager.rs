@@ -6,7 +6,7 @@ use std::io::{Read, Seek, Write};
 use crate::node::Node;
 
 pub const PAGE_SIZE: usize = 4096;
-pub const TABLE_MAX_PAGES: usize = 100;
+pub const TABLE_MAX_PAGES: usize = 400;
 pub const INVALID_PAGE_NUM: u32 = u32::MAX;
 
 pub struct Pager {
@@ -14,23 +14,19 @@ pub struct Pager {
     file_length: u64,
     // TODO: is this required? can be derived from pages.len()
     pub num_pages: u32,
-    pages: Vec<Option<Box<Node>>>,
+    pub pages: Vec<Option<Box<Node>>>,
 }
 
 impl Pager {
     pub fn pager_open(filename: &str) -> Self {
-        let Ok(file) = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(filename)
-        else {
-            panic!("Unable to open file.");
-        };
+            .expect("Unable to open file.");
 
-        let Ok(metadata) = file.metadata() else {
-            panic!("Unable to get file metadata.");
-        };
+        let metadata = file.metadata().expect("Unable to get file metadata.");
 
         let file_length = metadata.len();
         let num_pages = (file_length / PAGE_SIZE as u64) as u32;
@@ -93,10 +89,10 @@ impl Pager {
                     .expect("Unable to read file to a buffer.");
 
                 page = Node::from_bytes(&buffer);
-            }
 
-            if page_num as u32 >= self.num_pages {
-                self.num_pages = page_num + 1;
+                if page_num as u32 >= self.num_pages {
+                    self.num_pages = page_num + 1;
+                }
             }
             self.pages[page_num as usize] = Some(Box::new(page));
         }
@@ -104,6 +100,21 @@ impl Pager {
         self.pages[page_num as usize]
             .as_mut()
             .expect("Node is already initialized. This should not happen")
+    }
+
+    pub fn get_node_max_key(&mut self, page_num: u32) -> u32 {
+        let mut node = self.pages[page_num as usize]
+            .take()
+            .expect("The node should be initialized.");
+        let max_key = match *node {
+            Node::Leaf { num_cells, .. } => *node.leaf_node_key(num_cells - 1),
+            Node::Internal {
+                ref right_child_pointer,
+                ..
+            } => self.get_node_max_key(*right_child_pointer),
+        };
+        let _ = self.pages[page_num as usize].insert(node);
+        max_key
     }
 
     pub fn pager_flush(&mut self, page_num: u32) {
@@ -127,21 +138,6 @@ impl Pager {
     // go onto the end of the database file
     pub fn get_unused_page_num(&self) -> u32 {
         self.num_pages
-    }
-
-    pub fn get_node_max_key(&mut self, page_num: u32) -> u32 {
-        let mut node = self.pages[page_num as usize]
-            .take()
-            .expect("The node should be initialized.");
-        let max_key = match *node {
-            Node::Leaf { num_cells, .. } => *node.leaf_node_key(num_cells - 1),
-            Node::Internal {
-                ref right_child_pointer,
-                ..
-            } => self.get_node_max_key(*right_child_pointer),
-        };
-        let _ = self.pages[page_num as usize].insert(node);
-        max_key
     }
 }
 
