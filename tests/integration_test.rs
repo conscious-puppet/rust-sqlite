@@ -24,10 +24,10 @@ fn insert_and_retrieve_row() {
     assert_eq!(output, expected_output);
 }
 
-// #[test]
-// FIXME: the test is failing because TABLE_FULL error has been removed.
-fn _print_error_when_row_is_full() {
-    let mut input: Vec<_> = (0..=1400)
+#[test]
+#[should_panic]
+fn print_error_when_row_is_full() {
+    let mut input: Vec<_> = (0..=1937)
         .map(|i| format!("insert {i} user{i} person{i}@example.com"))
         .collect();
     input.push(".exit".to_owned());
@@ -567,8 +567,10 @@ fn spawn_rust_sqlite(tempfile: &TempFile, input: Vec<String>) -> Vec<String> {
         .arg(&tempfile.filepath)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("Unable to start the process.");
+
 
     let stdin = process
         .stdin

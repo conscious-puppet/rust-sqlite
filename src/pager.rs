@@ -58,11 +58,8 @@ impl Pager {
     }
 
     fn validate_page_num(page_num: u32) {
-        if page_num as usize > TABLE_MAX_PAGES {
-            panic!(
-                "Tried to fetch page number out of bounds. {} > {}",
-                page_num, TABLE_MAX_PAGES
-            );
+        if page_num as usize >= TABLE_MAX_PAGES {
+            panic!("Error: Table Full.");
         }
     }
 
