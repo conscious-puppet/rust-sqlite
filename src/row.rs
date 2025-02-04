@@ -7,6 +7,7 @@ pub const USERNAME_SIZE: usize = 32;
 pub const EMAIL_SIZE: usize = 255;
 pub const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
 
+#[derive(Clone)]
 pub struct Row {
     pub id: u32,
     username: [u8; USERNAME_SIZE],

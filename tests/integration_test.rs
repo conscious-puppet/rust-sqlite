@@ -571,7 +571,6 @@ fn spawn_rust_sqlite(tempfile: &TempFile, input: Vec<String>) -> Vec<String> {
         .spawn()
         .expect("Unable to start the process.");
 
-
     let stdin = process
         .stdin
         .as_mut()

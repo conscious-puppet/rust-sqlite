@@ -144,69 +144,79 @@ impl<'a> Cursor<'a> {
     fn leaf_node_split_and_insert(&mut self, key: u32, row: Row) {
         let new_page_num = self.table.pager.get_unused_page_num();
 
+        let old_node_page_num = self.page_num;
         let old_max = self.table.pager.get_node_max_key(self.page_num);
-        let old_node = self.table.pager.get_page(self.page_num);
-        let next_node = *old_node.leaf_node_next_leaf();
-        let old_node_parent = *old_node.parent();
-        *old_node.leaf_node_next_leaf() = new_page_num;
+        let next_node = *self
+            .table
+            .pager
+            .get_page(old_node_page_num)
+            .leaf_node_next_leaf();
+        let old_node_parent = *self.table.pager.get_page(old_node_page_num).parent();
+        *self
+            .table
+            .pager
+            .get_page(old_node_page_num)
+            .leaf_node_next_leaf() = new_page_num;
 
-        let new_node = self.table.pager.get_page(new_page_num);
-        *new_node.leaf_node_next_leaf() = next_node;
-        *new_node.parent() = old_node_parent;
+        *self
+            .table
+            .pager
+            .get_page(new_page_num)
+            .leaf_node_next_leaf() = next_node;
+        *self.table.pager.get_page(new_page_num).parent() = old_node_parent;
 
         // All existing keys plus new key should be divided
         // evenly between old (left) and new (right) nodes.
         // Starting from the right, move each key to correct position.
-        for i in (self.cell_num as usize + 1..=LEAF_NODE_MAX_CELLS).rev() {
-            let old_node = self.table.pager.get_page(self.page_num);
-            let old_leaf_node_cell =
-                std::mem::replace(old_node.leaf_node_cell(i as u32 - 1), LeafNodeCell::new());
-            let destination_node = if i >= LEAF_NODE_LEFT_SPLIT_COUNT {
-                self.table.pager.get_page(new_page_num)
+        // Update cell count on both leaf nodes
+        for i in (0..=LEAF_NODE_MAX_CELLS).rev() {
+            let destination_node_page_num = if i >= LEAF_NODE_LEFT_SPLIT_COUNT {
+                new_page_num
             } else {
-                self.table.pager.get_page(self.page_num)
+                old_node_page_num
             };
-            let index_within_node = (i % LEAF_NODE_LEFT_SPLIT_COUNT) as u32;
-            let destination = destination_node.leaf_node_cell(index_within_node);
-            *destination = old_leaf_node_cell;
-        }
 
-        let destination_node = if self.cell_num as usize >= LEAF_NODE_LEFT_SPLIT_COUNT {
-            self.table.pager.get_page(new_page_num)
-        } else {
-            self.table.pager.get_page(self.page_num)
-        };
+            let index_within_node = i % LEAF_NODE_LEFT_SPLIT_COUNT;
 
-        let index_within_node = (self.cell_num as usize % LEAF_NODE_LEFT_SPLIT_COUNT) as u32;
-        *destination_node.leaf_node_value(index_within_node) = row;
-        *destination_node.leaf_node_key(index_within_node) = key;
-
-        for i in (0..self.cell_num as usize).rev() {
-            let old_node = self.table.pager.get_page(self.page_num);
-            let old_leaf_node_cell =
-                std::mem::replace(old_node.leaf_node_cell(i as u32), LeafNodeCell::new());
-            let destination_node = if i >= LEAF_NODE_LEFT_SPLIT_COUNT {
-                self.table.pager.get_page(new_page_num)
+            if i == self.cell_num as usize {
+                let destination_node = self.table.pager.get_page(destination_node_page_num);
+                *destination_node.leaf_node_value(index_within_node as u32) = row.clone();
+                *destination_node.leaf_node_key(index_within_node as u32) = key;
+            } else if i > self.cell_num as usize {
+                let old_node = self.table.pager.get_page(old_node_page_num);
+                let old_leaf_node_cell =
+                    std::mem::replace(old_node.leaf_node_cell(i as u32 - 1), LeafNodeCell::new());
+                let destination = self
+                    .table
+                    .pager
+                    .get_page(destination_node_page_num)
+                    .leaf_node_cell(index_within_node as u32);
+                *destination = old_leaf_node_cell;
             } else {
-                self.table.pager.get_page(self.page_num)
-            };
-            let index_within_node = (i % LEAF_NODE_LEFT_SPLIT_COUNT) as u32;
-            let destination = destination_node.leaf_node_cell(index_within_node);
-            *destination = old_leaf_node_cell;
+                let old_node = self.table.pager.get_page(old_node_page_num);
+                let old_leaf_node_cell =
+                    std::mem::replace(old_node.leaf_node_cell(i as u32), LeafNodeCell::new());
+                let destination = self
+                    .table
+                    .pager
+                    .get_page(destination_node_page_num)
+                    .leaf_node_cell(index_within_node as u32);
+                *destination = old_leaf_node_cell;
+            }
         }
 
         // Update cell count on both leaf nodes
         let new_node = self.table.pager.get_page(new_page_num);
         *new_node.leaf_node_num_cells() = LEAF_NODE_RIGHT_SPLIT_COUNT as u32;
 
-        let old_node = self.table.pager.get_page(self.page_num);
+        let old_node = self.table.pager.get_page(old_node_page_num);
         *old_node.leaf_node_num_cells() = LEAF_NODE_LEFT_SPLIT_COUNT as u32;
 
         if old_node.is_node_root() {
             self.table.create_new_root(new_page_num);
         } else {
             let parent_page_num = *old_node.parent();
-            let new_max = self.table.pager.get_node_max_key(self.page_num);
+            let new_max = self.table.pager.get_node_max_key(old_node_page_num);
             let parent = self.table.pager.get_page(parent_page_num);
             parent.update_internal_node_key(old_max, new_max);
             self.table
