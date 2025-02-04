@@ -1,5 +1,5 @@
 use crate::{
-    pager::PAGE_SIZE,
+    pager::{INVALID_PAGE_NUM, PAGE_SIZE},
     row::{Row, ROW_SIZE},
 };
 
@@ -46,56 +46,59 @@ pub const INTERNAL_NODE_HEADER_SIZE: usize =
 pub const INTERNAL_NODE_KEY_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CHILD_SIZE: usize = std::mem::size_of::<u32>();
 pub const INTERNAL_NODE_CELL_SIZE: usize = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE;
+#[cfg(debug_assertions)]
 pub const INTERNAL_NODE_MAX_CELLS: usize = 3; // Kept small for testing
+#[cfg(not(debug_assertions))]
+pub const INTERNAL_NODE_MAX_CELLS: usize = LEAF_NODE_SPACE_FOR_CELLS / INTERNAL_NODE_CELL_SIZE;
 
 // Leaf Node Format
-// |-------------+----------------+----------------+-----------+--------------------|
-// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13        |
-// | node_type   | is_root        | parent_pointer | num_cells | next_leaf_pointer  |
-// |-------------+----------------+----------------+-----------+--------------------|
-// | bytes 14-17                  | bytes 18-308                                    |
-// | key 0                        | value 0                                         |
-// |------------------------------+-------------------------------------------------|
-// | bytes 309-312                | bytes 313-603                                   |
-// | key 1                        | value 1                                         |
-// |------------------------------+-------------------------------------------------|
-// |             ...              |          ...                                    |
-// |------------------------------+-------------------------------------------------|
-// | bytes 3554-3557              | bytes 3558-3848                                 |
-// | key 12                       | value 12                                        |
-// |------------------------------+-------------------------------------------------|
-// |                                 bytes 3849-4095                                |
-// |                                  wasted space                                  |
-// |--------------------------------------------------------------------------------|
+// |-------------+----------------+----------------+-----------+---------------------|
+// | byte 0      | byte 1         | bytes 2-5      | bytes 6-9 | bytes 10-13         |
+// | node_type   | is_root        | parent_pointer | num_cells | next_leaf_pointer   |
+// |-------------+----------------+----------------+-----------+---------------------|
+// | bytes 14-17                  | bytes 18-308                                     |
+// | key 0                        | value 0                                          |
+// |------------------------------+--------------------------------------------------|
+// | bytes 309-312                | bytes 313-603                                    |
+// | key 1                        | value 1                                          |
+// |------------------------------+--------------------------------------------------|
+// |             ...              |          ...                                     |
+// |------------------------------+--------------------------------------------------|
+// | bytes 3554-3557              | bytes 3558-3848                                  |
+// | key 12                       | value 12                                         |
+// |------------------------------+--------------------------------------------------|
+// |                                 bytes 3849-4095                                 |
+// |                                  wasted space                                   |
+// |---------------------------------------------------------------------------------|
 //
 //
 // Internal Node Format
-// |-----------+---------+----------------+-----------+---------------------|
-// | byte 0    | byte 1  | bytes 2-5      | bytes 6-9 | bytes 10-13         |
-// | node_type | is_root | parent_pointer | num_keys  | right_child_pointer |
-// |-----------+---------+----------------+-----------+---------------------|
-// | bytes 14-17                         | bytes 18-21                      |
-// | child pointer 0                     | key 0                            |
-// |-------------------------------------+----------------------------------|
-// | bytes 22-25                         | bytes 26-29                      |
-// | child pointer 1                     | key 1                            |
-// |-------------------------------------+----------------------------------|
-// |                 ...                 |             ...                  |
-// |-------------------------------------+----------------------------------|
-// | bytes 4086-4089                     | bytes 4090-4093                  |
-// | child pointer 509                   | key 509                          |
-// |-------------------------------------+----------------------------------|
-// |                              bytes 4094-4095                           |
-// |                                wasted space                            |
-// |------------------------------------------------------------------------|
+// |-----------+------------------+----------------+-----------+---------------------|
+// | byte 0    | byte 1           | bytes 2-5      | bytes 6-9 | bytes 10-13         |
+// | node_type | is_root          | parent_pointer | num_keys  | right_child_pointer |
+// |-----------+------------------+----------------+-----------+---------------------|
+// | bytes 14-17                             | bytes 18-21                           |
+// | child pointer 0                         | key 0                                 |
+// |-----------------------------------------+---------------------------------------|
+// | bytes 22-25                             | bytes 26-29                           |
+// | child pointer 1                         | key 1                                 |
+// |-----------------------------------------+---------------------------------------|
+// |                 ...                     |             ...                       |
+// |-----------------------------------------+---------------------------------------|
+// | bytes 4086-4089                         | bytes 4090-4093                       |
+// | child pointer 509                       | key 509                               |
+// |-----------------------------------------+---------------------------------------|
+// |                                  bytes 4094-4095                                |
+// |                                    wasted space                                 |
+// |---------------------------------------------------------------------------------|
 //
 // |------------------------+-----------------------+------------------------|
 // | # internal node layers | max # leaf nodes      | Size of all leaf nodes |
 // |------------------------+-----------------------+------------------------|
-// | 0                      | 511 ^ 0 = 1           | 4 KB                   |
-// | 1                      | 511 ^ 1 = 511         | ~2 MB                  |
-// | 2                      | 511 ^ 2 = 261,121     | ~1 GB                  |
-// | 3                      | 511 ^ 3 = 133,432,831 | ~550 GB                |
+// | 0                      | 510 ^ 0 = 1           | 4 KB                   |
+// | 1                      | 510 ^ 1 = 510         | ~2 MB                  |
+// | 2                      | 510 ^ 2 = 260,100     | ~1 GB                  |
+// | 3                      | 510 ^ 3 = 132,651,000 | ~550 GB                |
 // |------------------------+-----------------------+------------------------|
 
 pub enum Node {
@@ -161,14 +164,14 @@ impl Node {
 
     pub fn initialize_internal_node() -> Self {
         let mut cells = Vec::new();
-        for _ in 0..INTERNAL_NODE_MAX_CELLS {
+        for _ in 0..(INTERNAL_NODE_MAX_CELLS + 1) {
             cells.push(InternalNodeCell::new())
         }
         Node::Internal {
             is_root: false,
             parent_pointer: 0,
             num_keys: 0,
-            right_child_pointer: 0,
+            right_child_pointer: INVALID_PAGE_NUM,
             cells,
         }
     }
@@ -219,13 +222,6 @@ impl Node {
         *is_root_curr = is_root;
     }
 
-    pub fn get_node_max_key(&mut self) -> u32 {
-        match *self {
-            Node::Leaf { num_cells, .. } => *self.leaf_node_key(num_cells - 1),
-            Node::Internal { num_keys, .. } => *self.internal_node_key(num_keys - 1),
-        }
-    }
-
     pub fn internal_node_num_keys(&mut self) -> &mut u32 {
         match *self {
             Node::Leaf { .. } => {
@@ -267,9 +263,20 @@ impl Node {
                 child_num, num_keys
             );
         } else if child_num == *num_keys {
-            self.internal_node_right_child()
+            let right_child = self.internal_node_right_child();
+            if *right_child == INVALID_PAGE_NUM {
+                panic!("Tried to access right child of node, but was invalid page");
+            }
+            right_child
         } else {
-            &mut self.internal_node_cell(child_num).child_pointer
+            let child = &mut self.internal_node_cell(child_num).child_pointer;
+            if *child == INVALID_PAGE_NUM {
+                panic!(
+                    "Tried to access child {} of node, but was invalid page",
+                    child_num
+                );
+            }
+            child
         }
     }
 

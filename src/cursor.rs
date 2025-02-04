@@ -144,8 +144,8 @@ impl<'a> Cursor<'a> {
     fn leaf_node_split_and_insert(&mut self, key: u32, row: Row) {
         let new_page_num = self.table.pager.get_unused_page_num();
 
+        let old_max = self.table.pager.get_node_max_key(self.page_num);
         let old_node = self.table.pager.get_page(self.page_num);
-        let old_max = old_node.get_node_max_key();
         let next_node = *old_node.leaf_node_next_leaf();
         let old_node_parent = *old_node.parent();
         *old_node.leaf_node_next_leaf() = new_page_num;
@@ -206,7 +206,7 @@ impl<'a> Cursor<'a> {
             self.table.create_new_root(new_page_num);
         } else {
             let parent_page_num = *old_node.parent();
-            let new_max = old_node.get_node_max_key();
+            let new_max = self.table.pager.get_node_max_key(self.page_num);
             let parent = self.table.pager.get_page(parent_page_num);
             parent.update_internal_node_key(old_max, new_max);
             self.table
